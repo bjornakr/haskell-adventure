@@ -1,4 +1,5 @@
 import Data.List
+import Data.List.Split
 
 type Id = String
 type Inventory = [Item]
@@ -64,6 +65,8 @@ transferItemFromRoomToActor world item room@(Room _ _ items actors) actor
 -- transferActorToAnotherRoom :: World -> Room -> Room -> Actor -> World
 -- TODO: IMPLEMENT
 
+
+
 -- ==== ENTITY FUNCTIONS ====
 addOrUpdateEntity :: (IdEq a, Eq a) => a -> [a] -> [a]
 addOrUpdateEntity e es
@@ -77,6 +80,12 @@ findEntity e [] = Nothing
 findEntity e' (e:es)
     | idEq e' e = Just e'
     | otherwise = findEntity e' es
+
+findEntityById :: IdEq a => String -> [a] -> Maybe a
+findEntityById id [] = Nothing
+findEntityById id (e:es)
+    | id == (getId e) = Just e
+    | otherwise = findEntityById id es
 
 updateEntity :: IdEq a => a -> [a] -> [a]
 updateEntity ue [] = []
@@ -153,3 +162,68 @@ testsAreOk =
     addActorToRoom_noActorsInRoom_returnsRoomWithActor &&
     addActorToRoom_actorAlreayInRoom_returnsRoomWithActorNotDuplicated
 
+
+
+
+
+
+
+-- ==== UseCase / View ====
+
+-- data Action = WalkTo Room | LookAt Item | PickUp Item | Use Item Item | Give Item Actor | TalkTo Actor
+data Action = LookAt (Maybe Item) deriving (Show)
+
+parseAction :: String -> Room -> Maybe Action
+parseAction s (Room id exits items actors) = 
+    let actionParts = splitOn " " s in
+        case actionParts !! 0 of
+            "L" -> Just (LookAt (findEntityById (actionParts !! 1) items))
+            _ -> Nothing
+
+
+
+parseObject :: String -> [Item] -> Maybe Item
+parseObject s items = findEntityById s items
+
+
+lookAt :: Maybe Item -> String
+lookAt Nothing = "I can't look at that, señor."
+lookAt (Just item) = "You study the " ++ (show item) ++ " in great detail."
+
+respondAction :: Maybe Action -> String
+respondAction Nothing = "I don't know how to do that, señor.\n"
+respondAction (Just action) = respondValidAction action
+    -- | action == LookAt (Maybe Item) = "Heey"
+    -- | otherwise = "I don't know how to do that, señor.\n"
+
+respondValidAction :: Action -> String
+respondValidAction (LookAt item) = lookAt item
+
+sampleRoom =
+    Room 
+        "Library"           -- ID
+        []                  -- Exits
+        [
+            Item "Sword",
+            Item "Key",
+            Item "Book"
+        ]                   -- Items
+        [
+            Actor "Player" [Item "Apple"]
+        ]                   -- Actors
+
+sampleWorld = World [sampleRoom]
+
+description :: Room -> String
+description (Room rId exits items _) =
+    "You are in " ++ rId ++ ".\n\n" ++
+    "You see " ++ (show items) ++ ".\n\n" ++
+    "What would you like to do?\n" ++
+    "[W]alk to | [L]ook at | [P]ick up | [U]se\n" ++
+    "[G]ive    | [T]alk to | Pu[S]h    | Pu[L]l"
+
+main :: IO ()
+main = do
+    putStrLn $ description sampleRoom
+    action <- getLine
+    putStrLn $ show $ respondAction $ parseAction action sampleRoom
