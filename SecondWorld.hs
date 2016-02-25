@@ -3,22 +3,28 @@ import Data.List.Split
 
 type Id = String
 type Inventory = [Item]
+type Description = String
 
-class IdEq a where
+class Entity a where
     idEq :: a -> a -> Bool
     getId :: a -> Id
     idEq a1 a2 = getId a1 == getId a2
 
+class Observable a where
+    getDescription :: a -> String
+
 data Actor = Actor Id [Item] deriving (Show, Eq)
-instance IdEq Actor where
+instance Entity Actor where
     getId (Actor id _) = id
 
-data Item = Item Id deriving (Show, Eq)
-instance IdEq Item where
-    getId (Item id) = id
+data Item = Item Id Description deriving (Show, Eq)
+instance Entity Item where
+    getId (Item id _) = id
+instance Observable Item where
+    getDescription (Item _ desc) = desc
 
 data Room = Room Id [Room] [Item] [Actor] deriving (Show, Eq)
-instance IdEq Room where
+instance Entity Room where
     getId (Room id _ _ _) = id
 
 data World = World [Room] deriving (Show, Eq)
@@ -68,40 +74,40 @@ transferItemFromRoomToActor world item room@(Room _ _ items actors) actor
 
 
 -- ==== ENTITY FUNCTIONS ====
-addOrUpdateEntity :: (IdEq a, Eq a) => a -> [a] -> [a]
+addOrUpdateEntity :: (Entity a, Eq a) => a -> [a] -> [a]
 addOrUpdateEntity e es
     | existingEntity == Nothing = e:es
     | otherwise = updateEntity e es
     where
         existingEntity = findEntity e es
 
-findEntity :: IdEq a => a -> [a] -> Maybe a
+findEntity :: Entity a => a -> [a] -> Maybe a
 findEntity e [] = Nothing
 findEntity e' (e:es)
     | idEq e' e = Just e'
     | otherwise = findEntity e' es
 
-findEntityById :: IdEq a => String -> [a] -> Maybe a
+findEntityById :: Entity a => String -> [a] -> Maybe a
 findEntityById id [] = Nothing
 findEntityById id (e:es)
     | id == (getId e) = Just e
     | otherwise = findEntityById id es
 
-updateEntity :: IdEq a => a -> [a] -> [a]
+updateEntity :: Entity a => a -> [a] -> [a]
 updateEntity ue [] = []
 updateEntity ue (e:es)
     | idEq ue e = ue:es
     | otherwise = e:(updateEntity ue es)
 
 
-removeEntity :: IdEq a => a -> [a] -> [a]
+removeEntity :: Entity a => a -> [a] -> [a]
 removeEntity e [] = []
 removeEntity e' (e:es)
     | idEq e' e = es
     | otherwise = e:(removeEntity e' es)
 
 -- ==== TESTS ====
-item1 = Item "Item1"
+item1 = Item "Item1" "Test item 1"
 actor1 = Actor "Actor1" []
 room1 = Room "Room1" [] [] []
 room2 = Room "Room2" [] [] []
@@ -171,45 +177,53 @@ testsAreOk =
 -- ==== UseCase / View ====
 
 -- data Action = WalkTo Room | LookAt Item | PickUp Item | Use Item Item | Give Item Actor | TalkTo Actor
-data Action = LookAt (Maybe Item) deriving (Show)
+--data Action = LookAt (Maybe Item) | LookAt (Maybe Actor) deriving (Show)
 
-parseAction :: String -> Room -> Maybe Action
+data Action a = LookAt (Maybe a)
+
+parseAction :: (Observable a) => String -> Room -> Maybe (Action a)
 parseAction s (Room id exits items actors) = 
     let actionParts = splitOn " " s in
         case actionParts !! 0 of
             "L" -> Just (LookAt (findEntityById (actionParts !! 1) items))
+            --"T" -> Just (LookAt (findEntityById (actionParts !! 1) actors))
             _ -> Nothing
 
+--parse2 verb 
 
 
-parseObject :: String -> [Item] -> Maybe Item
-parseObject s items = findEntityById s items
+
+--parseObject :: String -> [Item] -> Maybe Item
+--parseObject s items = findEntityById s items
 
 
-lookAt :: Maybe Item -> String
+
+lookAt :: (Observable a) => Maybe a -> String
 lookAt Nothing = "I can't look at that, señor."
-lookAt (Just item) = "You study the " ++ (show item) ++ " in great detail."
+lookAt (Just observable) = getDescription observable
 
-respondAction :: Maybe Action -> String
+
+
+respondAction :: Maybe (Action a) -> String
 respondAction Nothing = "I don't know how to do that, señor.\n"
 respondAction (Just action) = respondValidAction action
     -- | action == LookAt (Maybe Item) = "Heey"
     -- | otherwise = "I don't know how to do that, señor.\n"
 
-respondValidAction :: Action -> String
-respondValidAction (LookAt item) = lookAt item
+respondValidAction :: Action a -> String
+respondValidAction (LookAt a) = "" --lookAt a
 
 sampleRoom =
     Room 
         "Library"           -- ID
         []                  -- Exits
         [
-            Item "Sword",
-            Item "Key",
-            Item "Book"
+            Item "Sword" "A beautiful, shining, freshly polished sword.",
+            Item "Key" "It is a golden key.",
+            Item "Book" "The title is Zob Goblin and the Poggle of Buckletwig."
         ]                   -- Items
         [
-            Actor "Player" [Item "Apple"]
+            Actor "Player" [Item "Apple" "A red, shining apple."]
         ]                   -- Actors
 
 sampleWorld = World [sampleRoom]
@@ -219,7 +233,7 @@ description (Room rId exits items _) =
     "You are in " ++ rId ++ ".\n\n" ++
     "You see " ++ (show items) ++ ".\n\n" ++
     "What would you like to do?\n" ++
-    "[W]alk to | [L]ook at | [P]ick up | [U]se\n" ++
+    "[W]alk to | [L]ook at | [P]ick up | [C]ombine\n" ++
     "[G]ive    | [T]alk to | Pu[S]h    | Pu[L]l"
 
 main :: IO ()
