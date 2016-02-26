@@ -199,7 +199,7 @@ testsAreOk =
 -- data Action = WalkTo Room | LookAt Item | PickUp Item | Use Item Item | Give Item Actor | TalkTo Actor
 --data Action = LookAt (Maybe Item) | LookAt (Maybe Actor) deriving (Show)
 
-data Action = LookAt | LookAround | PickUp
+data Action = LookAt | LookAround | PickUp | WalkTo
 
 parseAction :: String -> Maybe (Action, Id)
 parseAction s = parseAction' (splitOn " " s)
@@ -216,6 +216,7 @@ parseAction' (verb:id:ids) =
     case verb of
         "L" -> Just (LookAt, id)
         "P" -> Just (PickUp, id)
+        "W" -> Just (WalkTo, id)
         _ -> Nothing
 
 
@@ -229,7 +230,8 @@ respondValidAction :: (Player, World) -> (Action, Id) -> ((Player, World), Strin
 respondValidAction (player, world) (LookAround, _) = ((player, world), getDescription player)
 respondValidAction gamestate (LookAt, id) = lookAtSomething gamestate id
 respondValidAction gamestate@(Player (Room _ _ items _) _, w) (PickUp, id) =
-    pickUpSomething gamestate (findEntityById id (items))
+    pickUpSomething gamestate (findEntityById id items)
+respondValidAction gamestate@(_, (World rooms)) (WalkTo, id) = goSomewhere gamestate (findEntityById id rooms)
 
 lookAtSomething :: (Player, World) -> Id -> ((Player, World), String)
 lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
@@ -248,6 +250,10 @@ pickUpSomething gamestate Nothing =
     (gamestate, "How can you pick up that which does not exist?")
 
 
+goSomewhere :: (Player, World) -> Maybe Room -> ((Player, World), String)
+goSomewhere ((Player _ inventory), world) (Just room) = (((Player room inventory), world), (getDescription (Player room inventory)))
+goSomewhere gamestate Nothing = (gamestate, "You can't go there.")
+
 lookAt :: (Observable a) => Maybe a -> String
 lookAt Nothing = "I can't look at that, señor."
 lookAt (Just observable) = getDescription observable
@@ -256,21 +262,38 @@ lookAt (Just observable) = getDescription observable
 
 
 
-sampleRoom =
+bathroom =
+    Room
+        "Bathroom"
+        [
+            library
+        ]
+        [
+            Item "Toothbrush" "A sparkling new toothbrush.",
+            Item "Toilet" "It's one of them fancy toilets."
+        ]
+        [
+            Actor "ToiletMan" [] "The great toilet man looms over thee."
+        ]
+
+
+library =
     Room 
-        "Library"           -- ID
-        []                  -- Exits
+        "Library"
+        [          
+            bathroom  
+        ]
         [
             Item "Sword" "A beautiful, shining, freshly polished sword.",
             Item "Key" "It is a golden key.",
             Item "Book" "The title is Zob Goblin and the Poggle of Buckletwig."
-        ]                   -- Items
+        ]
         [
-            Actor "Player" [Item "Apple" "A red, shining apple."] "A fine, young lad."
-        ]                   -- Actors
+            Actor "YoungLad" [Item "Apple" "A red, shining apple."] "A fine, young lad."
+        ]
 
-sampleWorld = World [sampleRoom]
-samplePlayer = Player sampleRoom [Item "Gun" "It's a good, old Smith & Wesson."]
+sampleWorld = World [library, bathroom]
+samplePlayer = Player library [Item "Gun" "It's a good, old Smith & Wesson."]
 
 
 description :: Player -> String
