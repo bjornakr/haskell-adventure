@@ -13,11 +13,25 @@ class Entity a where
 class Observable a where
     getDescription :: a -> String
 
-data Actor = Actor Id [Item] deriving (Show, Eq)
+data Actor = Actor Id [Item] Description deriving (Show, Eq)
 instance Entity Actor where
-    getId (Actor id _) = id
+    getId (Actor id _ _) = id
+instance Observable Actor where
+    getDescription (Actor _ _ desc) = desc
 
-data Item = Item Id Description deriving (Show, Eq)
+data Player = Player Room Inventory deriving (Show, Eq)
+instance Observable Player where
+    getDescription (Player (Room roomId _ items _) inventory) = 
+        "You are in " ++ roomId ++ ".\n\n" ++
+        "You see " ++ (show items) ++ ".\n\n" ++
+        "You have " ++ (show inventory) ++ ".\n\n" ++
+        "What would you like to do?\n" ++
+        "[W]alk to | [L]ook (at) | [P]ick up | [C]ombine\n" ++
+        "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l"
+
+data Item = Item Id Description deriving (Eq)
+instance Show Item where
+    show (Item id _) = id
 instance Entity Item where
     getId (Item id _) = id
 instance Observable Item where
@@ -57,8 +71,10 @@ removeItemFromRoom :: Room -> Item -> Room
 removeItemFromRoom (Room rId rs items as) item = (Room rId rs (removeEntity item items) as)
 
 addItemToInventory :: Actor -> Item -> Actor
-addItemToInventory (Actor id items) item = (Actor id (item:items))
+addItemToInventory (Actor id items desc) item = (Actor id (item:items) desc)
 
+--roomHasItem :: Room -> Item -> Bool
+--roomHasItem (Room _ _ items _) item = findEntity item items == Just item
 
 transferItemFromRoomToActor :: World -> Item -> Room -> Actor -> World
 transferItemFromRoomToActor world item room@(Room _ _ items actors) actor
@@ -71,6 +87,10 @@ transferItemFromRoomToActor world item room@(Room _ _ items actors) actor
 -- transferActorToAnotherRoom :: World -> Room -> Room -> Actor -> World
 -- TODO: IMPLEMENT
 
+pickUpItem :: (Player, World) -> Item -> (Player, World)
+pickUpItem ((Player room@(Room roomId exits items actors) inventory), world) item =
+    (Player roomWithoutItem (item:inventory), addRoom world roomWithoutItem)
+    where roomWithoutItem = removeItemFromRoom room item
 
 
 -- ==== ENTITY FUNCTIONS ====
@@ -108,7 +128,7 @@ removeEntity e' (e:es)
 
 -- ==== TESTS ====
 item1 = Item "Item1" "Test item 1"
-actor1 = Actor "Actor1" []
+actor1 = Actor "Actor1" [] "Test actor 1"
 room1 = Room "Room1" [] [] []
 room2 = Room "Room2" [] [] []
 room3 = Room "Room3" [] [] []
@@ -118,11 +138,11 @@ world = World [room1, room2]
 transferItemFromRoomToActor_itemInSameRoomAsActor_itemIsTransfered =
     let room = Room "Room1" [] [item1] [actor1] in
     transferItemFromRoomToActor (World [room]) item1 room actor1 ==
-        World [Room "Room1" [] [] [(Actor "Actor1" [item1])]]
+        World [Room "Room1" [] [] [(Actor "Actor1" [item1]) "Test actor 1"]]
 transferItemFromRoomToActor_itemIsNotInRoom_nothingHappens =
     let room = Room "Room1" [] [] [actor1] in
     transferItemFromRoomToActor (World [room]) item1 room actor1 ==
-        World [Room "Room1" [] [] [(Actor "Actor1" [])]]
+        World [Room "Room1" [] [] [(Actor "Actor1" []) "Test actor 1"]]
 transferItemFromRoomToActor_actorIsNotInRoom_nothingHappens =
     let room = Room "Room1" [] [item1] [] in
     transferItemFromRoomToActor (World [room]) item1 room actor1 ==
@@ -179,23 +199,53 @@ testsAreOk =
 -- data Action = WalkTo Room | LookAt Item | PickUp Item | Use Item Item | Give Item Actor | TalkTo Actor
 --data Action = LookAt (Maybe Item) | LookAt (Maybe Actor) deriving (Show)
 
-data Action a = LookAt (Maybe a)
+data Action = LookAt | LookAround | PickUp
 
-parseAction :: (Observable a) => String -> Room -> Maybe (Action a)
-parseAction s (Room id exits items actors) = 
-    let actionParts = splitOn " " s in
-        case actionParts !! 0 of
-            "L" -> Just (LookAt (findEntityById (actionParts !! 1) items))
-            --"T" -> Just (LookAt (findEntityById (actionParts !! 1) actors))
-            _ -> Nothing
+parseAction :: String -> Maybe (Action, Id)
+parseAction s = parseAction' (splitOn " " s)
+    --let actionParts = splitOn " " s in
+    --    case actionParts !! 0 of
+    --        "L" -> Just (LookAt, actionParts !! 1)
+    --        _ -> Nothing
 
---parse2 verb 
+parseAction' :: [String] -> Maybe (Action, Id)
+parseAction' (verb:[])
+    | verb == "L" = Just (LookAround, "NULL")
+    | otherwise = Nothing
+parseAction' (verb:id:ids) =
+    case verb of
+        "L" -> Just (LookAt, id)
+        "P" -> Just (PickUp, id)
+        _ -> Nothing
 
 
 
---parseObject :: String -> [Item] -> Maybe Item
---parseObject s items = findEntityById s items
+respondAction :: (Player, World) -> Maybe (Action, Id) -> ((Player, World), String)
+respondAction gamestate Nothing = (gamestate, "I don't know how to do that, señor.\n")
+respondAction gamestate (Just action) = respondValidAction gamestate action
+--respondAction world@(World rooms) (Just action) = (world, snd $ respondValidAction (rooms !! 0) action)
 
+respondValidAction :: (Player, World) -> (Action, Id) -> ((Player, World), String)
+respondValidAction (player, world) (LookAround, _) = ((player, world), getDescription player)
+respondValidAction gamestate (LookAt, id) = lookAtSomething gamestate id
+respondValidAction gamestate@(Player (Room _ _ items _) _, w) (PickUp, id) =
+    pickUpSomething gamestate (findEntityById id (items))
+
+lookAtSomething :: (Player, World) -> Id -> ((Player, World), String)
+lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
+--lookAtSomething room@(Room roomId exits items actors) id
+    | item /= Nothing = (gamestate, lookAt item)
+    | actor /= Nothing = (gamestate, lookAt actor)
+    | otherwise = (gamestate, "You don't know where to look.")
+    where
+        item = findEntityById id (items ++ inventory)
+        actor = findEntityById id actors
+
+pickUpSomething :: (Player, World) -> Maybe Item -> ((Player, World), String)
+pickUpSomething gamestate@(Player (Room _ _ items actors) inventory, w) (Just item@(Item itemId _)) =
+    (pickUpItem gamestate item, "You pick up the " ++ itemId)
+pickUpSomething gamestate Nothing =
+    (gamestate, "How can you pick up that which does not exist?")
 
 
 lookAt :: (Observable a) => Maybe a -> String
@@ -204,14 +254,7 @@ lookAt (Just observable) = getDescription observable
 
 
 
-respondAction :: Maybe (Action a) -> String
-respondAction Nothing = "I don't know how to do that, señor.\n"
-respondAction (Just action) = respondValidAction action
-    -- | action == LookAt (Maybe Item) = "Heey"
-    -- | otherwise = "I don't know how to do that, señor.\n"
 
-respondValidAction :: Action a -> String
-respondValidAction (LookAt a) = "" --lookAt a
 
 sampleRoom =
     Room 
@@ -223,21 +266,38 @@ sampleRoom =
             Item "Book" "The title is Zob Goblin and the Poggle of Buckletwig."
         ]                   -- Items
         [
-            Actor "Player" [Item "Apple" "A red, shining apple."]
+            Actor "Player" [Item "Apple" "A red, shining apple."] "A fine, young lad."
         ]                   -- Actors
 
 sampleWorld = World [sampleRoom]
+samplePlayer = Player sampleRoom [Item "Gun" "It's a good, old Smith & Wesson."]
 
-description :: Room -> String
-description (Room rId exits items _) =
+
+description :: Player -> String
+description (Player (Room rId exits items _) inventory) =
     "You are in " ++ rId ++ ".\n\n" ++
     "You see " ++ (show items) ++ ".\n\n" ++
+    "You have " ++ (show inventory) ++ ".\n\n" ++
     "What would you like to do?\n" ++
     "[W]alk to | [L]ook at | [P]ick up | [C]ombine\n" ++
     "[G]ive    | [T]alk to | Pu[S]h    | Pu[L]l"
 
+gameLoop :: (Player, World) -> IO ()
+gameLoop (player, world) = do
+    --putStrLn $ description player
+    action <- getLine
+    let actionResponse = respondAction (player, world) (parseAction action)
+    putStrLn $ snd actionResponse
+    gameLoop (fst actionResponse)
+
 main :: IO ()
 main = do
-    putStrLn $ description sampleRoom
-    action <- getLine
-    putStrLn $ show $ respondAction $ parseAction action sampleRoom
+    gameLoop (samplePlayer, sampleWorld)
+
+    --putStrLn $ description player
+    --action <- getLine
+    --let a = respondAction (player, sampleWorld) (parseAction action)
+    --putStrLn $ show $ snd $ a
+    --putStrLn $ description (fst (fst a))
+    --action <- getLine
+    --putStrLn "Game over!"
