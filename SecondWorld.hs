@@ -43,14 +43,14 @@ type World = [room]
 data GameState = GameState Player World
 instance Show Gamestate where
     show (Gamestate (Player roomId inventory) world) =
-        (observeEntity roomId) ++
+        (observeEntity roomId world) ++
         "You have " ++ (show inventory) ++ ".\n\n" ++
         "What would you like to do?\n" ++
         "[W]alk to | [L]ook (at) | [P]ick up | [C]ombine\n" ++
         "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l"
 
 data ActionResult = ActionResult Gamestate String
-
+data Observation = Observation Id String
 
 
 
@@ -97,12 +97,13 @@ exchangeEntity oldEntity newEntity (e:es)
     | idEq oldEntity e = newEntity:es
     | otherwise = e:(exchangeEntity oldEntity newEntity es)
 
-observeEntity :: Entity a => Id -> String
+observeEntity :: Entity a => Id -> [a] -> String
 observeEntity id
-    | findEntityById id == Nothing = "You stare into the nothingness."
+    | findEntityById id entities == Nothing = ""
     | otherwise = getDescription (findEntityById id)
 
-
+createObservation :: Entity a => a -> Observation
+createObservation = Observation (getId a) (getDescription a)
 
 
 
@@ -188,6 +189,12 @@ exchangeItem (GameState (Player roomId inventory) world) oldItem newItem =
     GameState 
         (Player roomId (exchangeEntity oldItem newItem inventory)) 
         (map (changeItemsInRoom (exchangeEntity oldItem newItem)) world)
+
+findObservationById :: [Observation] -> id -> String
+findObservationById [] id = ""
+findObservationById (Observation id' s):xs id
+    | id == id' = s
+    | otherwise = findObservationById xs id
 
 --updateItem :: (Player, World) -> Item -> (Player, World)
 --updateItem (Player room inventory, World rooms) updatedItem =
@@ -325,7 +332,8 @@ respondAction gamestate (Just action) = respondValidAction gamestate action
 
 respondValidAction :: GameState -> Action -> ActionResult
 respondValidAction gamestate LookAround = ActionResult gamestate (show gamestate)
-respondValidAction gamestate (LookAt id) = lookAtSomething gamestate id
+respondValidAction gamestate@(GameState (Player roomId _) world) (LookAt id) = 
+    lookAtSomething gamestate (findEntityById roomId world) id
 
 respondValidAction (GameState (Player roomId _) _) (PickUp id) =
     pickUpSomething gamestate (findEntityById id items)
@@ -343,9 +351,21 @@ combineSomething gamestate _ Nothing = combineSomething gamestate Nothing Nothin
 combineSomething gamestate (Just item1) (Just item2) = combine gamestate item1 item2
 
 
-lookAtSomething :: GameState -> Id -> ActionResult
-lookAtSomething GameState (Player roomId inventory) world
-    | lookLook
+
+
+getObservationsFromRoom :: Room -> [Observation]
+getObservationsFromRoom (Room _ exits items actors) =
+    (map exits createObservation) ++ (map items createObservation) ++ (map actors createObservation)
+
+lookAtSomething :: GameState -> Maybe Room -> Id -> ActionResult
+lookAtSomething gamestate@(GameState (Player roomId inventory) world) Nothing id =
+    ActionResult gamestate (findObservationById (map inventory createObservation))
+lookAtSomething gamestate@(GameState (Player _ inventory) _) (Just room) id =
+    ActionResult 
+        gamestate
+        findObservationById ((map inventory createObservation) ++ getObservationsFromRoom room) id
+
+
 
 
 lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
