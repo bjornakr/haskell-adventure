@@ -21,9 +21,11 @@ instance Observable Actor where
 
 data Player = Player Room Inventory deriving (Show, Eq)
 instance Observable Player where
-    getDescription (Player (Room roomId _ items _) inventory) = 
+    getDescription (Player (Room roomId exits items actors) inventory) = 
         "You are in " ++ roomId ++ ".\n\n" ++
         "You see " ++ (show items) ++ ".\n\n" ++
+        "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
+        "Exits to " ++ (show (map getId exits)) ++ ".\n\n" ++
         "You have " ++ (show inventory) ++ ".\n\n" ++
         "What would you like to do?\n" ++
         "[W]alk to | [L]ook (at) | [P]ick up | [C]ombine\n" ++
@@ -42,7 +44,11 @@ instance Entity Room where
     getId (Room id _ _ _) = id
 
 data World = World [Room] deriving (Show, Eq)
-    
+
+data Gamestate = Gamestate Player World
+
+data ActionResult = ActionResult Gamestate String
+
 linkRooms :: World -> Room -> Room -> World
 linkRooms w room1@(Room rid1 rs1 i1 a1) room2@(Room rid2 rs2 i2 a2) =
     addRooms w [Room rid1 (room2:rs1) i1 a1, Room rid2 (room1:rs2) i2 a2]
@@ -61,11 +67,15 @@ addActor (World rooms) r a =
 addActorToRoom :: Room -> Actor -> Room
 addActorToRoom (Room rid rs is as) actor = Room rid rs is (addOrUpdateEntity actor as)
 
-addItem :: World -> Room -> Item -> World
-addItem (World rooms) room item = World (updateEntity (addItemToRoom room item) rooms)
+--addItem :: World -> Room -> Item -> World
+--addItem (World rooms) room item = World (updateEntity (addItemToRoom room item) rooms)
 
 addItemToRoom :: Room -> Item -> Room
 addItemToRoom (Room rId rs items as) item = Room rId rs (addOrUpdateEntity item items) as
+
+removeItemFromRooms :: [Room] -> Item -> [Room]
+removeItemFromRooms [] item = []
+removeItemFromRooms (room:rooms) item = (removeItemFromRoom room item):(removeItemFromRooms rooms item)
 
 removeItemFromRoom :: Room -> Item -> Room
 removeItemFromRoom (Room rId rs items as) item = (Room rId rs (removeEntity item items) as)
@@ -92,6 +102,51 @@ pickUpItem ((Player room@(Room roomId exits items actors) inventory), world) ite
     (Player roomWithoutItem (item:inventory), addRoom world roomWithoutItem)
     where roomWithoutItem = removeItemFromRoom room item
 
+updateItemInRooms :: [Room] -> Item -> [Room]
+updateItemInRooms [] item = []
+updateItemInRooms (room:rooms) item =
+    (updateItemInRoom room item):(updateItemInRooms rooms item)
+
+updateItemInRoom :: Room -> Item -> Room
+updateItemInRoom (Room id exits items actors) item =
+    Room id exits (updateEntity item items) actors
+
+--replaceItemInWorld :: World -> Item -> Item -> World
+--replaceItem (World []) = World []
+--replaceItem (World room:rooms)
+
+--type OldItem = Item
+--type NewItem = Item
+--exchangeItem :: (Player, World) -> OldItem -> NewItem -> (Player, World)
+--exchangeItem (Player room inventory, World rooms) oldItem newItem =
+
+--addItemToCurrentRoom :: (Player, World) -> Item -> (Player, World)
+--addItemToCurrentRoom (Player room inventory, World rooms) item =
+--    addItemToRoom
+
+updateItem :: (Player, World) -> Item -> (Player, World)
+updateItem (Player room inventory, World rooms) updatedItem =
+    (Player (updateItemInRoom room updatedItem) (updateEntity updatedItem inventory),
+        World (updateItemInRooms rooms updatedItem))
+
+removeItem :: (Player, World) -> Item -> (Player, World)
+removeItem (Player room inventory, World rooms) itemToRemove =
+    (Player (removeItemFromRoom room itemToRemove) (removeEntity itemToRemove inventory), 
+        World (removeItemFromRooms rooms itemToRemove))
+
+combine :: (Player, World) -> Item -> Item -> ((Player, World), String)
+combine gamestate (Item "Toothbrush" _) (Item "Toilet" _) = 
+    (updateItem (updateItem gamestate (Item "Toilet" "A super clean toilet")) (Item "Toothbrush" "The toothbrush looks rather unappealing."),
+        "You give the toilet a good scrub.")
+combine gamestate i1@(Item "Toilet" _) i2@(Item "Toothbrush" _) = combine gamestate i2 i1
+combine gamestate jaildoorKey@(Item "JaildoorKey" _) closedJaildoor@(Item "ClosedJaildoor" jaildoorDescription) = 
+    (updateItem (removeItem gamestate jaildoorKey) (Item "OpenJaildoor" jaildoorDescription), "You hear a click. Amazing, the key worked!")
+combine gamestate i1@(Item "ClosedJaildoor" _) i2@(Item "JaildoorKey" _) = combine gamestate i2 i1
+
+
+combine gamestate _ _ = (gamestate, "You cannot combine those items.")
+
+
 
 -- ==== ENTITY FUNCTIONS ====
 addOrUpdateEntity :: (Entity a, Eq a) => a -> [a] -> [a]
@@ -107,7 +162,7 @@ findEntity e' (e:es)
     | idEq e' e = Just e'
     | otherwise = findEntity e' es
 
-findEntityById :: Entity a => String -> [a] -> Maybe a
+findEntityById :: Entity a => Id -> [a] -> Maybe a
 findEntityById id [] = Nothing
 findEntityById id (e:es)
     | id == (getId e) = Just e
@@ -199,39 +254,52 @@ testsAreOk =
 -- data Action = WalkTo Room | LookAt Item | PickUp Item | Use Item Item | Give Item Actor | TalkTo Actor
 --data Action = LookAt (Maybe Item) | LookAt (Maybe Actor) deriving (Show)
 
-data Action = LookAt | LookAround | PickUp | WalkTo
+data Action = LookAt Id | LookAround | PickUp Id | WalkTo Id | Combine Id Id
 
-parseAction :: String -> Maybe (Action, Id)
+parseAction :: String -> Maybe Action
 parseAction s = parseAction' (splitOn " " s)
     --let actionParts = splitOn " " s in
     --    case actionParts !! 0 of
     --        "L" -> Just (LookAt, actionParts !! 1)
     --        _ -> Nothing
 
-parseAction' :: [String] -> Maybe (Action, Id)
+parseAction' :: [String] -> Maybe Action
 parseAction' (verb:[])
-    | verb == "L" = Just (LookAround, "NULL")
+    | verb == "L" = Just LookAround
     | otherwise = Nothing
+parseAction' (verb:id1:id2:ids) =
+    case verb of
+        "C" -> Just (Combine id1 id2)
+        _ -> Nothing
 parseAction' (verb:id:ids) =
     case verb of
-        "L" -> Just (LookAt, id)
-        "P" -> Just (PickUp, id)
-        "W" -> Just (WalkTo, id)
+        "L" -> Just (LookAt id)
+        "P" -> Just (PickUp id)
+        "W" -> Just (WalkTo id)
         _ -> Nothing
 
 
 
-respondAction :: (Player, World) -> Maybe (Action, Id) -> ((Player, World), String)
+respondAction :: (Player, World) -> Maybe Action -> ((Player, World), String)
 respondAction gamestate Nothing = (gamestate, "I don't know how to do that, señor.\n")
 respondAction gamestate (Just action) = respondValidAction gamestate action
 --respondAction world@(World rooms) (Just action) = (world, snd $ respondValidAction (rooms !! 0) action)
 
-respondValidAction :: (Player, World) -> (Action, Id) -> ((Player, World), String)
-respondValidAction (player, world) (LookAround, _) = ((player, world), getDescription player)
-respondValidAction gamestate (LookAt, id) = lookAtSomething gamestate id
-respondValidAction gamestate@(Player (Room _ _ items _) _, w) (PickUp, id) =
+respondValidAction :: (Player, World) -> Action -> ((Player, World), String)
+respondValidAction (player, world) LookAround = ((player, world), getDescription player)
+respondValidAction gamestate (LookAt id) = lookAtSomething gamestate id
+respondValidAction gamestate@(Player (Room _ _ items _) _, w) (PickUp id) =
     pickUpSomething gamestate (findEntityById id items)
-respondValidAction gamestate@(_, (World rooms)) (WalkTo, id) = goSomewhere gamestate (findEntityById id rooms)
+respondValidAction gamestate@(_, (World rooms)) (WalkTo id) =
+    goSomewhere gamestate (findEntityById id rooms)
+respondValidAction gamestate@(Player (Room _ _ items _) inventory, world) (Combine id1 id2) =
+    combineSomething gamestate (findEntityById id1 (items++inventory)) (findEntityById id2 (items++inventory))
+
+combineSomething :: (Player, World) -> Maybe Item -> Maybe Item -> ((Player, World), String)
+combineSomething gamestate Nothing _ = (gamestate, "Combine what with what now?")
+combineSomething gamestate _ Nothing = combineSomething gamestate Nothing Nothing
+combineSomething gamestate (Just item1) (Just item2) = combine gamestate item1 item2
+
 
 lookAtSomething :: (Player, World) -> Id -> ((Player, World), String)
 lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
@@ -292,8 +360,16 @@ library =
             Actor "YoungLad" [Item "Apple" "A red, shining apple."] "A fine, young lad."
         ]
 
-sampleWorld = World [library, bathroom]
-samplePlayer = Player library [Item "Gun" "It's a good, old Smith & Wesson."]
+jail = Room "Jail" 
+    [] -- no exits initially, will exit to library when door is open
+    [
+        Item "JaildoorKey" "A rusty, iron key.",
+        Item "ClosedJaildoor" "It's a steel bar door, impossible to break."
+    ]
+    []
+
+sampleWorld = World [library, bathroom, jail]
+samplePlayer = Player jail [Item "Gun" "It's a good, old Smith & Wesson."]
 
 
 description :: Player -> String
