@@ -14,7 +14,9 @@ class Entity a where
     idEq :: a -> a -> Bool
     getId :: a -> Id
     getDescription :: a -> String
+    toObservation :: a -> Observation
     idEq a1 a2 = getId a1 == getId a2
+    toObservation a = Observation (getId a) (getDescription a)
 
 data Actor = Actor Id [Item] Description deriving (Show, Eq)
 instance Entity Actor where
@@ -33,23 +35,23 @@ data Room = Room Id [Room] [Item] [Actor] deriving (Show, Eq)
 instance Entity Room where
     getId (Room id _ _ _) = id
     getDescription (Room id exits items actors) = 
-        "You are in " ++ roomId ++ ".\n\n" ++
+        "You are in " ++ id ++ ".\n\n" ++
         "You see " ++ (show items) ++ ".\n\n" ++
         "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
         "Exits to " ++ (show (map getId exits)) ++ ".\n\n"
 
 data Player = Player RoomId Inventory deriving (Show, Eq)
-type World = [room]
+type World = [Room]
 data GameState = GameState Player World
-instance Show Gamestate where
-    show (Gamestate (Player roomId inventory) world) =
+instance Show GameState where
+    show (GameState (Player roomId inventory) world) =
         (observeEntity roomId world) ++
         "You have " ++ (show inventory) ++ ".\n\n" ++
         "What would you like to do?\n" ++
         "[W]alk to | [L]ook (at) | [P]ick up | [C]ombine\n" ++
         "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l"
 
-data ActionResult = ActionResult Gamestate String
+data ActionResult = ActionResult GameState String
 data Observation = Observation Id String
 
 
@@ -98,12 +100,12 @@ exchangeEntity oldEntity newEntity (e:es)
     | otherwise = e:(exchangeEntity oldEntity newEntity es)
 
 observeEntity :: Entity a => Id -> [a] -> String
-observeEntity id
+observeEntity id entities
     | findEntityById id entities == Nothing = ""
-    | otherwise = getDescription (findEntityById id)
+    | otherwise = getDescription (findEntityById id entities)
 
-createObservation :: Entity a => a -> Observation
-createObservation = Observation (getId a) (getDescription a)
+--createObservation :: Entity a => a -> Observation
+--createObservation = Observation (getId a) (getDescription a)
 
 
 
@@ -141,6 +143,10 @@ removeItemFromRoom (Room rId rs items as) item = (Room rId rs (removeEntity item
 changeItemsInRoom :: ([Item] -> [Item]) -> Room -> Room
 changeItemsInRoom f (Room roomId exits items actors) = Room roomId exits (f items) actors
 
+findItemInRoom :: Room -> Id -> Maybe Item
+findItemInRoom (Room _ _ items _) id = findEntityById id items
+
+
 --addItemToInventory :: Actor -> Item -> Actor
 --addItemToInventory (Actor id items desc) item = (Actor id (item:items) desc)
 
@@ -169,12 +175,11 @@ addItemToInventory (GameState (Player roomId inventory) world) item =
     (GameState (Player roomId (item:inventory)) world)
 
 removeItemFromWorld :: GameState -> Item -> GameState
-removeItemFromWorld (GameState player world) = GameState player (map removeItemFromRoom world)
+removeItemFromWorld (GameState player world) item = GameState player (map (flip (removeItemFromRoom) item) world )
 
-pickUpItem :: GameState -> Item -> Maybe GameState
-pickUpItem (GameState (Player roomId inventory) world) item
-    findEntityById roomId world == Nothing = Nothing
-    otherwise = Just (removeItemFromWorld addItemToInventory gamestate)
+transferItemFromWorldToPlayer :: GameState -> Item ->  GameState
+transferItemFromWorldToPlayer gamestate@(GameState (Player roomId _) world) item =
+    removeItemFromWorld (addItemToInventory gamestate item) item
 
 --pickUpItem ((Player room@(Room roomId exits items actors) inventory), world) item =
 --    (Player roomWithoutItem (item:inventory), addRoom world roomWithoutItem)
@@ -182,7 +187,7 @@ pickUpItem (GameState (Player roomId inventory) world) item
 
 updateItem :: GameState -> Item -> GameState
 updateItem (GameState (Player roomId inventory) world) updatedItem =
-    GameState (Player roomId (updateEntity updateItem inventory)) (map updateItemInRoom world)
+    GameState (Player roomId (updateEntity updatedItem inventory)) (map (flip (updateItemInRoom) updatedItem) world)
 
 exchangeItem :: GameState -> Item -> Item -> GameState
 exchangeItem (GameState (Player roomId inventory) world) oldItem newItem =
@@ -190,10 +195,10 @@ exchangeItem (GameState (Player roomId inventory) world) oldItem newItem =
         (Player roomId (exchangeEntity oldItem newItem inventory)) 
         (map (changeItemsInRoom (exchangeEntity oldItem newItem)) world)
 
-findObservationById :: [Observation] -> id -> String
-findObservationById [] id = ""
-findObservationById (Observation id' s):xs id
-    | id == id' = s
+findObservationById :: [Observation] -> id -> Maybe String
+findObservationById [] id = Nothing
+findObservationById ((Observation id' s):xs) id
+    | id == id' = Just s
     | otherwise = findObservationById xs id
 
 --updateItem :: (Player, World) -> Item -> (Player, World)
@@ -216,77 +221,77 @@ combine gamestate i1@(Item "Toilet" _) i2@(Item "Toothbrush" _) = combine gamest
 
 combine gamestate jaildoorKey@(Item "JaildoorKey" _) closedJaildoor@(Item "ClosedJaildoor" jaildoorDescription) = 
     ActionResult
-        exchangeItem (removeItem gamestate jaildoorKey) closedJaildoor (Item "OpenJaildoor" jaildoorDescription)
+        (exchangeItem (removeItemFromWorld gamestate jaildoorKey) closedJaildoor (Item "OpenJaildoor" jaildoorDescription))
         "You hear a click. Amazing, the key worked!"
 
 combine gamestate i1@(Item "ClosedJaildoor" _) i2@(Item "JaildoorKey" _) = combine gamestate i2 i1
 
-combine gamestate _ _ = (gamestate, "You cannot combine those items.")
+combine gamestate _ _ = ActionResult gamestate "You cannot combine those items."
 
 
 
 
 -- ==== TESTS ====
-item1 = Item "Item1" "Test item 1"
-actor1 = Actor "Actor1" [] "Test actor 1"
-room1 = Room "Room1" [] [] []
-room2 = Room "Room2" [] [] []
-room3 = Room "Room3" [] [] []
-updatedRoom1 = Room "Room1" [room2] [] []
-world = World [room1, room2]
+--item1 = Item "Item1" "Test item 1"
+--actor1 = Actor "Actor1" [] "Test actor 1"
+--room1 = Room "Room1" [] [] []
+--room2 = Room "Room2" [] [] []
+--room3 = Room "Room3" [] [] []
+--updatedRoom1 = Room "Room1" [room2] [] []
+--world = [room1, room2]
 
-transferItemFromRoomToActor_itemInSameRoomAsActor_itemIsTransfered =
-    let room = Room "Room1" [] [item1] [actor1] in
-    transferItemFromRoomToActor (World [room]) item1 room actor1 ==
-        World [Room "Room1" [] [] [(Actor "Actor1" [item1]) "Test actor 1"]]
-transferItemFromRoomToActor_itemIsNotInRoom_nothingHappens =
-    let room = Room "Room1" [] [] [actor1] in
-    transferItemFromRoomToActor (World [room]) item1 room actor1 ==
-        World [Room "Room1" [] [] [(Actor "Actor1" []) "Test actor 1"]]
-transferItemFromRoomToActor_actorIsNotInRoom_nothingHappens =
-    let room = Room "Room1" [] [item1] [] in
-    transferItemFromRoomToActor (World [room]) item1 room actor1 ==
-        World [Room "Room1" [] [item1] []]
-
-
-addActorToRoom_noActorsInRoom_returnsRoomWithActor =
-    addActorToRoom room1 actor1 == Room "Room1" [] [] [actor1]
-addActorToRoom_actorAlreayInRoom_returnsRoomWithActorNotDuplicated =
-    addActorToRoom (Room "Room1" [] [] [actor1]) actor1 == Room "Room1" [] [] [actor1]
-
-linkRooms_twoUnlinkedRooms_roomsAreLinked =
-    linkRooms world room1 room2 == World [Room "Room1" [room2] [] [], Room "Room2" [room1] [] []]
-linkRooms_twoAlreadyLinkedRooms_nothingHappens =
-    linkRooms (World [Room "Room1" [room2] [] [], Room "Room2" [room1] [] []]) room1 room2 == 
-        World [Room "Room1" [room2] [] [], Room "Room2" [room1] [] []]
-linkRooms_newRooms_roomsAreCreatedAndLinked =
-    linkRooms (World []) room1 room2 == World [Room "Room2" [room1] [] [], Room "Room1" [room2] [] []]
-
-addRoom_newRoom_roomIsAdded =
-    addRoom world room3 == (World [room3, room1, room2])
-addRoom_existingRoom_roomIsUpdated =
-    addRoom world updatedRoom1 == (World [updatedRoom1, room2])
-
-findEntity_noEntities_returnsNothing = findEntity room1 [] == Nothing
-findEntity_entityExists_returnsEntity = findEntity room1 [room1] == Just room1
-findEntity_entityDoesNotExist_returnsNothing = findEntity room3 [room1, room2] == Nothing
-updateEntity_entityDoesNotExist_nothingHappens = updateEntity room1 [room2, room3] == [room2, room3]
-updateEntity_entityExists_entityIsUpdated = updateEntity updatedRoom1 [room1, room2] == [updatedRoom1, room2]
+--transferItemFromRoomToActor_itemInSameRoomAsActor_itemIsTransfered =
+--    let room = Room "Room1" [] [item1] [actor1] in
+--    transferItemFromRoomToActor (World [room]) item1 room actor1 ==
+--        [Room "Room1" [] [] [(Actor "Actor1" [item1]) "Test actor 1"]]
+--transferItemFromRoomToActor_itemIsNotInRoom_nothingHappens =
+--    let room = Room "Room1" [] [] [actor1] in
+--    transferItemFromRoomToActor (World [room]) item1 room actor1 ==
+--        [Room "Room1" [] [] [(Actor "Actor1" []) "Test actor 1"]]
+--transferItemFromRoomToActor_actorIsNotInRoom_nothingHappens =
+--    let room = Room "Room1" [] [item1] [] in
+--    transferItemFromRoomToActor (World [room]) item1 room actor1 ==
+--        [Room "Room1" [] [item1] []]
 
 
-testsAreOk =
-    findEntity_noEntities_returnsNothing &&
-    findEntity_entityExists_returnsEntity &&
-    findEntity_entityDoesNotExist_returnsNothing &&
-    updateEntity_entityDoesNotExist_nothingHappens &&
-    updateEntity_entityExists_entityIsUpdated &&
-    addRoom_newRoom_roomIsAdded &&
-    addRoom_existingRoom_roomIsUpdated &&
-    linkRooms_twoUnlinkedRooms_roomsAreLinked &&
-    linkRooms_twoAlreadyLinkedRooms_nothingHappens &&
-    linkRooms_newRooms_roomsAreCreatedAndLinked &&
-    addActorToRoom_noActorsInRoom_returnsRoomWithActor &&
-    addActorToRoom_actorAlreayInRoom_returnsRoomWithActorNotDuplicated
+--addActorToRoom_noActorsInRoom_returnsRoomWithActor =
+--    addActorToRoom room1 actor1 == Room "Room1" [] [] [actor1]
+--addActorToRoom_actorAlreayInRoom_returnsRoomWithActorNotDuplicated =
+--    addActorToRoom (Room "Room1" [] [] [actor1]) actor1 == Room "Room1" [] [] [actor1]
+
+--linkRooms_twoUnlinkedRooms_roomsAreLinked =
+--    linkRooms world room1 room2 == World [Room "Room1" [room2] [] [], Room "Room2" [room1] [] []]
+--linkRooms_twoAlreadyLinkedRooms_nothingHappens =
+--    linkRooms (World [Room "Room1" [room2] [] [], Room "Room2" [room1] [] []]) room1 room2 == 
+--        World [Room "Room1" [room2] [] [], Room "Room2" [room1] [] []]
+--linkRooms_newRooms_roomsAreCreatedAndLinked =
+--    linkRooms (World []) room1 room2 == World [Room "Room2" [room1] [] [], Room "Room1" [room2] [] []]
+
+--addRoom_newRoom_roomIsAdded =
+--    addRoom world room3 == (World [room3, room1, room2])
+--addRoom_existingRoom_roomIsUpdated =
+--    addRoom world updatedRoom1 == (World [updatedRoom1, room2])
+
+--findEntity_noEntities_returnsNothing = findEntity room1 [] == Nothing
+--findEntity_entityExists_returnsEntity = findEntity room1 [room1] == Just room1
+--findEntity_entityDoesNotExist_returnsNothing = findEntity room3 [room1, room2] == Nothing
+--updateEntity_entityDoesNotExist_nothingHappens = updateEntity room1 [room2, room3] == [room2, room3]
+--updateEntity_entityExists_entityIsUpdated = updateEntity updatedRoom1 [room1, room2] == [updatedRoom1, room2]
+
+
+--testsAreOk =
+--    findEntity_noEntities_returnsNothing &&
+--    findEntity_entityExists_returnsEntity &&
+--    findEntity_entityDoesNotExist_returnsNothing &&
+--    updateEntity_entityDoesNotExist_nothingHappens &&
+--    updateEntity_entityExists_entityIsUpdated &&
+--    addRoom_newRoom_roomIsAdded &&
+--    addRoom_existingRoom_roomIsUpdated &&
+--    linkRooms_twoUnlinkedRooms_roomsAreLinked &&
+--    linkRooms_twoAlreadyLinkedRooms_nothingHappens &&
+--    linkRooms_newRooms_roomsAreCreatedAndLinked &&
+--    addActorToRoom_noActorsInRoom_returnsRoomWithActor &&
+--    addActorToRoom_actorAlreayInRoom_returnsRoomWithActorNotDuplicated
 
 
 
@@ -335,73 +340,81 @@ respondValidAction gamestate LookAround = ActionResult gamestate (show gamestate
 respondValidAction gamestate@(GameState (Player roomId _) world) (LookAt id) = 
     lookAtSomething gamestate (findEntityById roomId world) id
 
-respondValidAction (GameState (Player roomId _) _) (PickUp id) =
-    pickUpSomething gamestate (findEntityById id items)
+respondValidAction gamestate@(GameState (Player roomId _) world) (PickUp id) =
+    pickUpSomething gamestate (findEntityById roomId world) id
 
-respondValidAction gamestate@(Player (Room _ _ items _) _, w) (PickUp id) =
-    pickUpSomething gamestate (findEntityById id items)
-respondValidAction gamestate@(_, (World rooms)) (WalkTo id) =
-    goSomewhere gamestate (findEntityById id rooms)
-respondValidAction gamestate@(Player (Room _ _ items _) inventory, world) (Combine id1 id2) =
-    combineSomething gamestate (findEntityById id1 (items++inventory)) (findEntityById id2 (items++inventory))
+--respondValidAction gamestate@(GameState (Player roomId _) world) (PickUp id) =
+--    pickUpSomething gamestate (findEntityById id items)
 
-combineSomething :: GameState -> Maybe Item -> Maybe Item -> ActionResult
-combineSomething gamestate Nothing _ = (gamestate, "Combine what with what now?")
-combineSomething gamestate _ Nothing = combineSomething gamestate Nothing Nothing
-combineSomething gamestate (Just item1) (Just item2) = combine gamestate item1 item2
+respondValidAction gamestate@(GameState (Player roomId _) world) (WalkTo id) =
+    goSomewhere gamestate (findEntityById roomId world) id
+respondValidAction gamestate@(GameState (Player roomId inventory) world) (Combine id1 id2) =
+    combineSomething gamestate (findEntityById roomId) id1 id2
+
+
+combineSomething :: GameState -> Maybe Room -> Id -> Id -> ActionResult
+combineSomething gamestate Nothing _ _ = ActionResult gamestate "Room error!"
+combineSomething GameState (Player _ inventory) (Just (Room _ _ items _)) id1 id2 =
+    combineSomething' (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory)) 
+
+combineSomething' :: GameState -> Maybe Item -> Maybe Item -> ActionResult
+combineSomething' gamestate Nothing _ = ActionResult gamestate "You don't have that."
+combineSomething' gamestate _ Nothing = ActionResult gamestate "You can't use this with that."
+combineSomething' gamestate (Just item1) (Just item2) = combine gamestate item1 item2
 
 
 
 
 getObservationsFromRoom :: Room -> [Observation]
 getObservationsFromRoom (Room _ exits items actors) =
-    (map exits createObservation) ++ (map items createObservation) ++ (map actors createObservation)
+    (map exits toObservation) ++ (map items toObservation) ++ (map actors toObservation)
 
 lookAtSomething :: GameState -> Maybe Room -> Id -> ActionResult
-lookAtSomething gamestate@(GameState (Player roomId inventory) world) Nothing id =
-    ActionResult gamestate (findObservationById (map inventory createObservation))
-lookAtSomething gamestate@(GameState (Player _ inventory) _) (Just room) id =
-    ActionResult 
-        gamestate
-        findObservationById ((map inventory createObservation) ++ getObservationsFromRoom room) id
+lookAtSomething gamestate@(GameState (Player _ inventory) _) Nothing id =
+    ActionResult gamestate (findObservationById (map inventory toObservation))
+lookAtSomething gamestate@(GameState (Player _ inventory) _) (Just room) id
+    | observation == Nothing = ActionResult gamestate "You don't know where to look."
+    | otherwise = ActionResult gamestate observation    
+    where observation = findObservationById ((map inventory toObservation) ++ getObservationsFromRoom room) id
+
+
+--lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
+--    | item /= Nothing = (gamestate, lookAt item)
+--    | actor /= Nothing = (gamestate, lookAt actor)
+--    | otherwise = (gamestate, "You don't know where to look.")
+--    where
+--        item = findEntityById id (items ++ inventory)
+--        actor = findEntityById id actors
+
+
+--lookAtSomething :: (Player, World) -> Id -> ((Player, World), String)
+--lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
+----lookAtSomething room@(Room roomId exits items actors) id
+--    | item /= Nothing = (gamestate, lookAt item)
+--    | actor /= Nothing = (gamestate, lookAt actor)
+--    | otherwise = (gamestate, "You don't know where to look.")
+--    where
+--        item = findEntityById id (items ++ inventory)
+--        actor = findEntityById id actors
+
+pickUpSomething :: GameState -> Maybe Room -> Id -> ActionResult
+pickUpSomething _ Nothing _ = "Pickup failed -> No room."
+pickUpSomething gamestate (Just room) id = pickUpSomething' gamestate (findItemInRoom room id)
 
 
 
-
-lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
-    | item /= Nothing = (gamestate, lookAt item)
-    | actor /= Nothing = (gamestate, lookAt actor)
-    | otherwise = (gamestate, "You don't know where to look.")
-    where
-        item = findEntityById id (items ++ inventory)
-        actor = findEntityById id actors
-
-
-lookAtSomething :: (Player, World) -> Id -> ((Player, World), String)
-lookAtSomething gamestate@(Player (Room _ _ items actors) inventory, w) id
---lookAtSomething room@(Room roomId exits items actors) id
-    | item /= Nothing = (gamestate, lookAt item)
-    | actor /= Nothing = (gamestate, lookAt actor)
-    | otherwise = (gamestate, "You don't know where to look.")
-    where
-        item = findEntityById id (items ++ inventory)
-        actor = findEntityById id actors
-
-pickUpSomething :: GameState -> Maybe Item -> ActionResult
-pickUpSomething gamestate Nothing =
+pickUpSomething' :: GameState -> Maybe Item -> ActionResult
+pickUpSomething' gamestate Nothing =
     (gamestate, "How can you pick up that which does not exist?")
-pickUpSomething gamestate item
-    | newGameState == Nothing = ActionResult gamestate "Pickup failed."
-    | otherwise = ActionResult newGameState ("You picked up the " ++ (show item))
-    where newGameState = pickUpItem gamestate item
-
+pickUpSomething' gamestate (Just item) =
+    ActionResult (transferItemFromWorldToPlayer gamestate item) ("You picked up the " ++ (show item))
 
 
 goSomewhere :: (Player, World) -> Maybe Room -> ((Player, World), String)
 goSomewhere ((Player _ inventory), world) (Just room) = (((Player room inventory), world), (getDescription (Player room inventory)))
 goSomewhere gamestate Nothing = (gamestate, "You can't go there.")
 
-lookAt :: (Observable a) => Maybe a -> String
+lookAt :: (Entity a) => Maybe a -> String
 lookAt Nothing = "I can't look at that, señor."
 lookAt (Just observable) = getDescription observable
 
@@ -447,7 +460,7 @@ jail = Room "Jail"
     ]
     []
 
-sampleWorld = World [library, bathroom, jail]
+sampleWorld = [library, bathroom, jail]
 samplePlayer = Player jail [Item "Gun" "It's a good, old Smith & Wesson."]
 
 
