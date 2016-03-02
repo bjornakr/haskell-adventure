@@ -4,9 +4,6 @@ import Data.List.Split
 ------------------------------------------------------------------------------------
 -- TODO
 --
--- Exits should be ids, not Rooms
--- DRY up the Maybe Rooms in the ActionResult
--- Some items should NOT be picked up
 -- Open / Close
 ------------------------------------------------------------------------------------
 
@@ -17,10 +14,9 @@ import Data.List.Split
 ------------------------------------------------------------------------------------
 
 type Id = String
-type RoomId = String
+type RoomId = Id
 type Inventory = [Item]
 type Description = String
-type CanBePickedUp = Bool
 
 class (Eq a) => Entity a where
     idEq :: a -> a -> Bool
@@ -54,14 +50,14 @@ instance Entity ItemDetails where
     getId (ItemDetails id _) = id
     getDescription (ItemDetails _ desc) = desc
 
-data Room = Room Id [Room] [Item] [Actor] deriving (Show, Eq)
+data Room = Room Id [RoomId] [Item] [Actor] deriving (Show, Eq)
 instance Entity Room where
     getId (Room id _ _ _) = id
     getDescription (Room id exits items actors) = 
         "You are in " ++ id ++ ".\n\n" ++
         "You see " ++ (show items) ++ ".\n\n" ++
         "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
-        "Exits to " ++ (show (map getId exits)) ++ ".\n\n"
+        "Exits to " ++ (show exits) ++ ".\n\n"
 
 data Player = Player RoomId Inventory deriving (Show, Eq)
 type World = [Room]
@@ -71,8 +67,9 @@ instance Show GameState where
         (observeEntity roomId world) ++
         "You have " ++ (show inventory) ++ ".\n\n" ++
         "What would you like to do?\n" ++
-        "[W]alk to | [L]ook (at) | [P]ick up | [C]ombine\n" ++
-        "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l"
+        "[W]alk to | [L]ook (at) | [P]ick up | [U]se\n" ++
+        "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l\n" ++
+        "[O]pen    | [C]lose     |           |       \n"
 
 data ActionResult = ActionResult GameState String
 data Observation = Observation Id String
@@ -131,8 +128,10 @@ observeEntity' (Just e) = getDescription e
 observeEntity :: Entity a => Id -> [a] -> String
 observeEntity id entities = observeEntity' (findEntityById id entities)
 
-
-
+maybeRoomsToRooms :: Entity a => [Maybe a] -> [a]
+maybeRoomsToRooms [] = []
+maybeRoomsToRooms (Nothing:xs) = maybeRoomsToRooms xs
+maybeRoomsToRooms ((Just x):xs) = x:(maybeRoomsToRooms xs)
 
 ------------------------------------------------------------------------------------
 -- DOMAIN FUNCTIONS
@@ -144,16 +143,16 @@ getGamestateFromActionResult (ActionResult gamestate _) = gamestate
 getMessageFromActionResult :: ActionResult -> String
 getMessageFromActionResult (ActionResult _ message) = message
 
-linkRooms :: World -> Room -> Room -> World
-linkRooms w room1@(Room rid1 rs1 i1 a1) room2@(Room rid2 rs2 i2 a2) =
-    addRooms w [Room rid1 (room2:rs1) i1 a1, Room rid2 (room1:rs2) i2 a2]
+--linkRooms :: World -> Room -> Room -> World
+--linkRooms w room1@(Room rid1 rs1 i1 a1) room2@(Room rid2 rs2 i2 a2) =
+--    addRooms w [Room rid1 (room2:rs1) i1 a1, Room rid2 (room1:rs2) i2 a2]
 
-addRooms :: World -> [Room] -> World
-addRooms w [] = w
-addRooms w (r:rs) = addRooms (addRoom w r) rs
+--addRooms :: World -> [Room] -> World
+--addRooms w [] = w
+--addRooms w (r:rs) = addRooms (addRoom w r) rs
 
-addRoom :: World -> Room -> World
-addRoom world room = addOrUpdateEntity room world
+--addRoom :: World -> Room -> World
+--addRoom world room = addOrUpdateEntity room world
 
 addActor :: World -> Room -> Actor -> World
 addActor (rooms) r a = (updateEntity (addActorToRoom r a) rooms)
@@ -209,8 +208,8 @@ findObservationById ((Observation id' s):xs) id
     | otherwise = findObservationById xs id
 
 
-combine' :: GameState -> Item -> Item -> Bool -> ActionResult
-combine' gamestate item1 item2 reversed =
+use' :: GameState -> Item -> Item -> Bool -> ActionResult
+use' gamestate item1 item2 reversed =
     case (getId item1, getId item2) of
         ("Toothbrush", "Toilet") ->
             ActionResult 
@@ -222,17 +221,29 @@ combine' gamestate item1 item2 reversed =
                     (LooseItem (ItemDetails "Toothbrush" "The toothbrush looks rather unappealing."))
                 )
                 "You give the toilet a good scrub."
-        ("JaildoorKey", "ClosedJaildoor") ->
+        ("JaildoorKey", "LockedClosedJaildoor") ->
             ActionResult
-                (exchangeItem (removeItemFromWorld gamestate item1) item2 (StaticItem (ItemDetails "OpenJaildoor" (getDescription item2))))
+                (exchangeItem (removeItemFromWorld gamestate item1) item2 (StaticItem (ItemDetails "UnlockedClosedJaildoor" (getDescription item2))))
                 "You hear a click. Amazing, the key worked!"
         _ ->
             case reversed of
                 True -> ActionResult gamestate "You cannot combine those items."
-                False -> combine' gamestate item2 item1 True
+                False -> use' gamestate item2 item1 True
 
-combine :: GameState -> Item -> Item -> ActionResult
-combine gamestate i1 i2 = combine' gamestate i1 i2 False
+use :: GameState -> Item -> Item -> ActionResult
+use gamestate i1 i2 = use' gamestate i1 i2 False
+
+open :: GameState -> Item -> ActionResult
+open gamestate item =
+    case (getId item) of
+        ("UnlockedClosedJaildoor") ->
+            ActionResult
+                (exchangeItem gamestate item (StaticItem (ItemDetails "OpenJaildoor" "The jaildoor is wide open")))
+                "You open the jaildoor."
+
+        ("LockedClosedJaildoor") -> ActionResult gamestate "You try the door, but it is locked. Maybe there is a key somewhere..."
+
+        _ -> ActionResult gamestate ("You cannot open the " ++ (show item))
 
 
 --combine :: GameState -> Item -> Item -> ActionResult
@@ -263,7 +274,7 @@ combine gamestate i1 i2 = combine' gamestate i1 i2 False
 -- data Action = WalkTo Room | LookAt Item | PickUp Item | Use Item Item | Give Item Actor | TalkTo Actor
 --data Action = LookAt (Maybe Item) | LookAt (Maybe Actor) deriving (Show)
 
-data Action = LookAt Id | LookAround | PickUp Id | WalkTo Id | Combine Id Id
+data Action = LookAt Id | LookAround | PickUp Id | WalkTo Id | Use Id Id | Open Id | Close Id
 
 parseAction :: String -> Maybe Action
 parseAction s = parseAction' (splitOn " " s)
@@ -274,13 +285,15 @@ parseAction' (verb:[])
     | otherwise = Nothing
 parseAction' (verb:id1:id2:ids) =
     case verb of
-        "C" -> Just (Combine id1 id2)
+        "U" -> Just (Use id1 id2)
         _ -> Nothing
 parseAction' (verb:id:ids) =
     case verb of
         "L" -> Just (LookAt id)
         "P" -> Just (PickUp id)
         "W" -> Just (WalkTo id)
+        "O" -> Just (Open id)
+        "C" -> Just (Close id)
         _ -> Nothing
 
 
@@ -295,31 +308,36 @@ respondValidAction' gamestate Nothing _ = ActionResult gamestate "Room reference
 
 respondValidAction' gamestate _ LookAround = ActionResult gamestate (show gamestate)
 
-respondValidAction' gamestate@(GameState (Player _ inventory) _) (Just room) (LookAt id) = 
-    lookAtSomething gamestate (findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room)) id)
+respondValidAction' gamestate@(GameState (Player _ inventory) world) (Just room) (LookAt id) = 
+    lookAtSomething gamestate (findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room world)) id)
 
 respondValidAction' gamestate (Just room) (PickUp id) =
     pickUpSomething gamestate (findItemInRoom room id)
 
-respondValidAction' gamestate (Just (Room _ exits _ _)) (WalkTo exitId) =
-    goSomewhere gamestate (findEntityById exitId exits)
+respondValidAction' gamestate@(GameState _ world) (Just (Room _ exits _ _)) (WalkTo exitId)
+    | elem exitId exits = goSomewhere gamestate (findEntityById exitId world)
+    | otherwise = ActionResult gamestate ("You cannot go to " ++ exitId)
+    --ActionResult gamestate ("ExitID " ++ exitId ++ " - Exits: " ++ (show exits))
 
-respondValidAction' gamestate@(GameState (Player _ inventory) _) (Just (Room _ _ items _)) (Combine id1 id2) =
-    combineSomething gamestate (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory))
+respondValidAction' gamestate@(GameState (Player _ inventory) _) (Just (Room _ _ items _)) (Use id1 id2) =
+    useSomething gamestate (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory))
+
+respondValidAction' gamestate@(GameState (Player _ inventory) _) (Just (Room _ _ items _)) (Open id) =
+    openSomething gamestate (findEntityById id (inventory ++ items))
 
 
 respondValidAction :: GameState -> Action -> ActionResult
 respondValidAction gamestate@(GameState (Player roomId _) world) action =
     respondValidAction' gamestate (findEntityById roomId world) action
 
-combineSomething :: GameState -> Maybe Item -> Maybe Item -> ActionResult
-combineSomething gamestate Nothing _ = ActionResult gamestate "You don't have that."
-combineSomething gamestate _ Nothing = ActionResult gamestate "You can't use this with that."
-combineSomething gamestate (Just item1) (Just item2) = combine gamestate item1 item2
+useSomething :: GameState -> Maybe Item -> Maybe Item -> ActionResult
+useSomething gamestate Nothing _ = ActionResult gamestate "You don't have that."
+useSomething gamestate _ Nothing = ActionResult gamestate "You can't use this with that."
+useSomething gamestate (Just item1) (Just item2) = use gamestate item1 item2
 
-getObservationsFromRoom :: Room -> [Observation]
-getObservationsFromRoom (Room _ exits items actors) =
-    (map toObservation exits) ++ (map toObservation items) ++ (map toObservation actors)
+getObservationsFromRoom :: Room -> World -> [Observation]
+getObservationsFromRoom (Room _ exits items actors) world =
+    (map toObservation (maybeRoomsToRooms (map (flip findEntityById world) exits))) ++ (map toObservation items) ++ (map toObservation actors)
 
 lookAtSomething :: GameState -> Maybe String -> ActionResult
 lookAtSomething gamestate Nothing = ActionResult gamestate "You can't look at something that does not exist."
@@ -338,11 +356,15 @@ goSomewhere (GameState (Player _ inventory) world) (Just (Room roomId _ _ _)) =
     ActionResult newGameState (show newGameState)
     where newGameState = GameState (Player roomId inventory) world
 
+openSomething :: GameState -> Maybe Item -> ActionResult
+openSomething gamestate Nothing = ActionResult gamestate "You cannot open that."
+openSomething gamestate (Just item) = open gamestate item
+
 bathroom =
     Room
         "Bathroom"
         [
-            library
+            "Library"
         ]
         [
             LooseItem (ItemDetails "Toothbrush" "A sparkling new toothbrush."),
@@ -357,7 +379,7 @@ library =
     Room 
         "Library"
         [          
-            bathroom  
+            "Bathroom"
         ]
         [
             LooseItem (ItemDetails "Sword" "A beautiful, shining, freshly polished sword."),
@@ -372,7 +394,7 @@ jail = Room "Jail"
     [] -- no exits initially, will exit to library when door is open
     [
         LooseItem (ItemDetails "JaildoorKey" "A rusty, iron key."),
-        StaticItem (ItemDetails "ClosedJaildoor" "It's a steel bar door, impossible to break.")
+        StaticItem (ItemDetails "LockedClosedJaildoor" "It's a steel bar door, impossible to break.")
     ]
     []
 
