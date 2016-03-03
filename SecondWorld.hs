@@ -201,6 +201,19 @@ exchangeItem (GameState (Player roomId inventory) world) oldItem newItem =
         (Player roomId (exchangeEntity oldItem newItem inventory)) 
         (map (changeItemsInRoom (exchangeEntity oldItem newItem)) world)
 
+addExit :: GameState -> Maybe Room -> Maybe Room -> GameState
+addExit gamestate Nothing _ = gamestate
+addExit gamestate _ Nothing = gamestate
+addExit (GameState player world) (Just (Room roomId exits items actors)) (Just room2)  =
+    GameState player (updateEntity (Room roomId ((getId room2):exits) items actors) world)
+
+linkRooms :: GameState -> Maybe Room -> Maybe Room -> GameState
+linkRooms gamestate Nothing _ = gamestate
+linkRooms gamestate _ Nothing = gamestate
+linkRooms gamestate room1 room2 = addExit (addExit gamestate room1 room2) room2 room1
+-- linkRooms (GameState player world) (Just (Room r1id r1exits r1items r1actors)) (Just (Room r2id r2exits r2items r2actors))  =
+-- GameState player (updateEntity (Room room1Id (r2id:exits) r1items r1actors)
+
 findObservationById :: [Observation] -> Id -> Maybe String
 findObservationById [] id = Nothing
 findObservationById ((Observation id' s):xs) id
@@ -234,11 +247,15 @@ use :: GameState -> Item -> Item -> ActionResult
 use gamestate i1 i2 = use' gamestate i1 i2 False
 
 open :: GameState -> Item -> ActionResult
-open gamestate item =
+open gamestate@(GameState (Player roomId inventory) world) item =
     case (getId item) of
         ("UnlockedClosedJaildoor") ->
             ActionResult
-                (exchangeItem gamestate item (StaticItem (ItemDetails "OpenJaildoor" "The jaildoor is wide open")))
+                (linkRooms 
+                    (exchangeItem gamestate item (StaticItem (ItemDetails "OpenJaildoor" "The jaildoor is wide open")))
+                    (findEntityById roomId world)
+                    (findEntityById "Library" world)
+                )
                 "You open the jaildoor."
 
         ("LockedClosedJaildoor") -> ActionResult gamestate "You try the door, but it is locked. Maybe there is a key somewhere..."
