@@ -16,3 +16,7 @@ module World where
     addToRoom :: World -> Room -> RoomContent -> World
     addToRoom w r c =
         w { rooms = (Room.addContent r c) : (delete r (rooms w)) }
+
+    removeFromRoom :: World -> Room -> RoomContent -> World
+    removeFromRoom w r c =
+        w { rooms = (Room.removeContent r c) : (delete r (rooms w)) }

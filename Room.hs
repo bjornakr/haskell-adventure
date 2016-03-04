@@ -23,9 +23,28 @@ module Room where
     addExit r e =
         r { exits = e : exits r }
 
+    removeItem :: Room -> Item -> Room
+    removeItem r i =
+        r { items = (delete i (items i)) }
+
+    removeActor :: Room -> Actor -> Room
+    removeActor r a = 
+        r { actors = (delete a (actors a)) }
+
+    removeExit :: Room -> Exit -> Room
+    removeExit r e =
+        r { exits = (delete e (exits e)) }
+
     addContent :: Room -> RoomContent -> Room
     addContent r c =
         case c of 
             RoomContentItem c -> addItem r c
             RoomContentActor c -> addActor r c
             RoomContentExit c -> addExit r c
+
+    removeContent :: Room -> RoomContent -> Room
+    removeContent r c =
+        case c of
+            RoomContentItem c -> removeContent r c
+            RoomContentActor c -> removeActor r c
+            RoomContentExit c -> removeExit r c
