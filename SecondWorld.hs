@@ -1,10 +1,12 @@
-import Data.List
 import Data.List.Split
+import qualified Data.HashMap.Strict as Map
+import qualified Data.Set as Set
+import Data.Hashable (Hashable)
 
 ------------------------------------------------------------------------------------
 -- TODO
 --
--- Open / Close
+-- Close
 ------------------------------------------------------------------------------------
 
 
@@ -61,9 +63,10 @@ instance Entity Room where
 
 data Player = Player RoomId Inventory deriving (Show, Eq)
 type World = [Room]
-data GameState = GameState Player World
+type StateMap a = Map.HashMap a (Set.Set String)
+data GameState = GameState Player World (StateMap String)
 instance Show GameState where
-    show (GameState (Player roomId inventory) world) =
+    show (GameState (Player roomId inventory) world _) =
         (observeEntity roomId world) ++
         "You have " ++ (show inventory) ++ ".\n\n" ++
         "What would you like to do?\n" ++
@@ -137,22 +140,37 @@ maybeRoomsToRooms ((Just x):xs) = x:(maybeRoomsToRooms xs)
 -- DOMAIN FUNCTIONS
 ------------------------------------------------------------------------------------
 
+hasState :: (Eq a, Hashable a) => StateMap a -> a -> String -> Bool
+hasState stateMap key s =
+    case Map.lookup key stateMap of
+         (Just ss) -> Set.member s ss
+         Nothing -> False
+
+addState' :: (Eq a, Hashable a) => StateMap a -> a -> String -> StateMap a
+addState' stateMap key s =
+    case Map.lookup key stateMap of        
+        (Just ss) -> f (Set.insert s ss)
+        Nothing -> f (Set.singleton s)
+    where f x = (Map.insert key x stateMap)
+
+removeState' :: (Eq a, Hashable a) => StateMap a -> a -> String -> StateMap a
+removeState' stateMap key val =
+    case Map.lookup key stateMap of
+        (Just ss) -> Map.insert key (Set.delete val ss) stateMap
+        Nothing -> stateMap
+
+
+addState :: GameState -> String -> String -> GameState
+addState (GameState player world stateMap) key val = GameState player world (addState' stateMap key val)
+
+removeState :: GameState -> String -> String -> GameState
+removeState (GameState player world stateMap) key val = GameState player world (removeState' stateMap key val)
+
 getGamestateFromActionResult :: ActionResult -> GameState
 getGamestateFromActionResult (ActionResult gamestate _) = gamestate
 
 getMessageFromActionResult :: ActionResult -> String
 getMessageFromActionResult (ActionResult _ message) = message
-
---linkRooms :: World -> Room -> Room -> World
---linkRooms w room1@(Room rid1 rs1 i1 a1) room2@(Room rid2 rs2 i2 a2) =
---    addRooms w [Room rid1 (room2:rs1) i1 a1, Room rid2 (room1:rs2) i2 a2]
-
---addRooms :: World -> [Room] -> World
---addRooms w [] = w
---addRooms w (r:rs) = addRooms (addRoom w r) rs
-
---addRoom :: World -> Room -> World
---addRoom world room = addOrUpdateEntity room world
 
 addActor :: World -> Room -> Actor -> World
 addActor (rooms) r a = (updateEntity (addActorToRoom r a) rooms)
@@ -181,44 +199,58 @@ updateItemInRoom (Room id exits items actors) item =
     Room id exits (updateEntity item items) actors
 
 addItemToInventory :: GameState -> Item -> GameState
-addItemToInventory (GameState (Player roomId inventory) world) item =
-    (GameState (Player roomId (item:inventory)) world)
+addItemToInventory (GameState (Player roomId inventory) world stateMap) item =
+    (GameState (Player roomId (item:inventory)) world stateMap)
 
 removeItemFromWorld :: GameState -> Item -> GameState
-removeItemFromWorld (GameState player world) item = GameState player (map (flip (removeItemFromRoom) item) world )
+removeItemFromWorld (GameState player world stateMap) item =
+    GameState player (map (flip (removeItemFromRoom) item) world) stateMap
 
 transferItemFromWorldToPlayer :: GameState -> Item ->  GameState
-transferItemFromWorldToPlayer gamestate@(GameState (Player roomId _) world) item =
+transferItemFromWorldToPlayer gamestate item =
     removeItemFromWorld (addItemToInventory gamestate item) item
 
 updateItem :: GameState -> Item -> GameState
-updateItem (GameState (Player roomId inventory) world) updatedItem =
-    GameState (Player roomId (updateEntity updatedItem inventory)) (map (flip (updateItemInRoom) updatedItem) world)
+updateItem (GameState (Player roomId inventory) world stateMap) updatedItem =
+    GameState 
+        (Player roomId (updateEntity updatedItem inventory)) 
+        (map (flip (updateItemInRoom) updatedItem) world)
+        stateMap
 
 exchangeItem :: GameState -> Item -> Item -> GameState
-exchangeItem (GameState (Player roomId inventory) world) oldItem newItem =
+exchangeItem (GameState (Player roomId inventory) world stateMap) oldItem newItem =
     GameState 
         (Player roomId (exchangeEntity oldItem newItem inventory)) 
         (map (changeItemsInRoom (exchangeEntity oldItem newItem)) world)
+        stateMap
 
 addExit :: GameState -> Maybe Room -> Maybe Room -> GameState
 addExit gamestate Nothing _ = gamestate
 addExit gamestate _ Nothing = gamestate
-addExit (GameState player world) (Just (Room roomId exits items actors)) (Just room2)  =
-    GameState player (updateEntity (Room roomId ((getId room2):exits) items actors) world)
+addExit (GameState player world stateMap) (Just (Room roomId exits items actors)) (Just room2)  =
+    GameState player (updateEntity (Room roomId ((getId room2):exits) items actors) world) stateMap
 
-linkRooms :: GameState -> Maybe Room -> Maybe Room -> GameState
-linkRooms gamestate Nothing _ = gamestate
-linkRooms gamestate _ Nothing = gamestate
-linkRooms gamestate room1 room2 = addExit (addExit gamestate room1 room2) room2 room1
--- linkRooms (GameState player world) (Just (Room r1id r1exits r1items r1actors)) (Just (Room r2id r2exits r2items r2actors))  =
--- GameState player (updateEntity (Room room1Id (r2id:exits) r1items r1actors)
+linkRooms' :: GameState -> Maybe Room -> Maybe Room -> GameState
+linkRooms' gamestate Nothing _ = gamestate
+linkRooms' gamestate _ Nothing = gamestate
+linkRooms' gamestate room1 room2 = addExit (addExit gamestate room1 room2) room2 room1
+
+linkRooms :: GameState -> Id -> Id -> GameState
+linkRooms gamestate@(GameState _ world _) id1 id2 = linkRooms' gamestate (findEntityById id1 world) (findEntityById id2 world)
+
 
 findObservationById :: [Observation] -> Id -> Maybe String
 findObservationById [] id = Nothing
 findObservationById ((Observation id' s):xs) id
     | id == id' = Just s
     | otherwise = findObservationById xs id
+
+updateItemDescription :: GameState -> Item -> String -> GameState
+updateItemDescription gamestate (LooseItem (ItemDetails id desc)) newDesc =
+    updateItem gamestate (LooseItem (ItemDetails id newDesc))
+updateItemDescription gamestate (StaticItem (ItemDetails id desc)) newDesc =
+    updateItem gamestate (StaticItem (ItemDetails id newDesc))
+
 
 
 use' :: GameState -> Item -> Item -> Bool -> ActionResult
@@ -234,9 +266,11 @@ use' gamestate item1 item2 reversed =
                     (LooseItem (ItemDetails "Toothbrush" "The toothbrush looks rather unappealing."))
                 )
                 "You give the toilet a good scrub."
-        ("JaildoorKey", "LockedClosedJaildoor") ->
+                
+        ("JaildoorKey", "Jaildoor") ->
             ActionResult
-                (exchangeItem (removeItemFromWorld gamestate item1) item2 (StaticItem (ItemDetails "UnlockedClosedJaildoor" (getDescription item2))))
+                (removeState (removeItemFromWorld gamestate item1) "Jaildoor" "Locked")
+                --(exchangeItem (removeItemFromWorld gamestate item1) item2 (StaticItem (ItemDetails "UnlockedClosedJaildoor" (getDescription item2))))
                 "You hear a click. Amazing, the key worked!"
         _ ->
             case reversed of
@@ -247,40 +281,27 @@ use :: GameState -> Item -> Item -> ActionResult
 use gamestate i1 i2 = use' gamestate i1 i2 False
 
 open :: GameState -> Item -> ActionResult
-open gamestate@(GameState (Player roomId inventory) world) item =
+open gamestate@(GameState (Player roomId inventory) world stateMap) item =
     case (getId item) of
-        ("UnlockedClosedJaildoor") ->
-            ActionResult
-                (linkRooms 
-                    (exchangeItem gamestate item (StaticItem (ItemDetails "OpenJaildoor" "The jaildoor is wide open")))
-                    (findEntityById roomId world)
-                    (findEntityById "Library" world)
-                )
-                "You open the jaildoor."
+        ("Jaildoor") -> 
+            case (hasState stateMap "Jaildoor" "Locked") of
+                True -> ActionResult gamestate "You try the door, but it is locked. Maybe there is a key somewhere..."
+                False ->
+                    ActionResult
+                        (linkRooms (updateItemDescription gamestate item "The jaildoor is wide open.")
+                            roomId "Library")                           
+                        "You open the jaildoor."
 
-        ("LockedClosedJaildoor") -> ActionResult gamestate "You try the door, but it is locked. Maybe there is a key somewhere..."
+        ("Box") ->
+            ActionResult (updateItemDescription gamestate item "The box is open.") "You open the box."
 
         _ -> ActionResult gamestate ("You cannot open the " ++ (show item))
 
 
---combine :: GameState -> Item -> Item -> ActionResult
---combine gamestate (Item "Toothbrush" _ _) (Item "Toilet" _ _) = 
---    ActionResult 
---        (updateItem (updateItem gamestate (Item "Toilet" "A super clean toilet")) (Item "Toothbrush" "The toothbrush looks rather unappealing."))
---        "You give the toilet a good scrub."
-
---combine gamestate i1@(Item "Toilet" _ _) i2@(Item "Toothbrush" _ _) = combine gamestate i2 i1
-
---combine gamestate jaildoorKey@(Item "JaildoorKey" _ _) closedJaildoor@(Item "ClosedJaildoor" jaildoorDescription _) = 
---    ActionResult
---        (exchangeItem (removeItemFromWorld gamestate jaildoorKey) closedJaildoor (Item "OpenJaildoor" jaildoorDescription))
---        "You hear a click. Amazing, the key worked!"
-
---combine gamestate i1@(Item "ClosedJaildoor" _ _) i2@(Item "JaildoorKey" _ _) = combine gamestate i2 i1
-
---combine gamestate _ _ = ActionResult gamestate "You cannot combine those items."
-
-
+walkTo :: GameState -> Room -> ActionResult
+walkTo (GameState (Player _ inventory) world stateMap) (Room roomId _ _ _) =
+    ActionResult newGameState (show newGameState)
+    where newGameState = GameState (Player roomId inventory) world stateMap
 
 
 
@@ -325,26 +346,27 @@ respondValidAction' gamestate Nothing _ = ActionResult gamestate "Room reference
 
 respondValidAction' gamestate _ LookAround = ActionResult gamestate (show gamestate)
 
-respondValidAction' gamestate@(GameState (Player _ inventory) world) (Just room) (LookAt id) = 
-    lookAtSomething gamestate (findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room world)) id)
+respondValidAction' gamestate@(GameState (Player _ inventory) world _) (Just room) (LookAt id) = 
+    lookAtSomething 
+        gamestate 
+        (findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room world)) id)
 
 respondValidAction' gamestate (Just room) (PickUp id) =
     pickUpSomething gamestate (findItemInRoom room id)
 
-respondValidAction' gamestate@(GameState _ world) (Just (Room _ exits _ _)) (WalkTo exitId)
+respondValidAction' gamestate@(GameState _ world _) (Just (Room _ exits _ _)) (WalkTo exitId)
     | elem exitId exits = goSomewhere gamestate (findEntityById exitId world)
     | otherwise = ActionResult gamestate ("You cannot go to " ++ exitId)
-    --ActionResult gamestate ("ExitID " ++ exitId ++ " - Exits: " ++ (show exits))
 
-respondValidAction' gamestate@(GameState (Player _ inventory) _) (Just (Room _ _ items _)) (Use id1 id2) =
+respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Use id1 id2) =
     useSomething gamestate (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory))
 
-respondValidAction' gamestate@(GameState (Player _ inventory) _) (Just (Room _ _ items _)) (Open id) =
+respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Open id) =
     openSomething gamestate (findEntityById id (inventory ++ items))
 
 
 respondValidAction :: GameState -> Action -> ActionResult
-respondValidAction gamestate@(GameState (Player roomId _) world) action =
+respondValidAction gamestate@(GameState (Player roomId _) world _) action =
     respondValidAction' gamestate (findEntityById roomId world) action
 
 useSomething :: GameState -> Maybe Item -> Maybe Item -> ActionResult
@@ -365,13 +387,13 @@ pickUpSomething gamestate Nothing = ActionResult gamestate "How can you pick up 
 pickUpSomething gamestate (Just item@(StaticItem _)) =
     ActionResult gamestate ("You cannot pick up the " ++ (show item))
 pickUpSomething gamestate (Just item@(LooseItem _)) =
-    ActionResult (transferItemFromWorldToPlayer gamestate item) ("You picked up the " ++ (show item))
+    ActionResult (transferItemFromWorldToPlayer gamestate item) ("You pick up the " ++ (show item))
 
 goSomewhere :: GameState -> Maybe Room -> ActionResult
 goSomewhere gamestate Nothing = ActionResult gamestate "You can't go there."
-goSomewhere (GameState (Player _ inventory) world) (Just (Room roomId _ _ _)) =
+goSomewhere (GameState (Player _ inventory) world stateMap) (Just (Room roomId _ _ _)) =
     ActionResult newGameState (show newGameState)
-    where newGameState = GameState (Player roomId inventory) world
+    where newGameState = GameState (Player roomId inventory) world stateMap
 
 openSomething :: GameState -> Maybe Item -> ActionResult
 openSomething gamestate Nothing = ActionResult gamestate "You cannot open that."
@@ -411,12 +433,14 @@ jail = Room "Jail"
     [] -- no exits initially, will exit to library when door is open
     [
         LooseItem (ItemDetails "JaildoorKey" "A rusty, iron key."),
-        StaticItem (ItemDetails "LockedClosedJaildoor" "It's a steel bar door, impossible to break.")
+        StaticItem (ItemDetails "Jaildoor" "It's a steel bar door, impossible to break."),
+        StaticItem (ItemDetails "Box" "It's a closed box.")
     ]
     []
 
 sampleWorld = [library, bathroom, jail]
 samplePlayer = Player "Jail" [LooseItem (ItemDetails "Gun" "It's a good, old Smith & Wesson.")]
+sampleStateMap = Map.singleton "Jaildoor" (Set.singleton "") --  [("Jaildoor", ["Locked"])]
 
 gameLoop :: GameState -> IO ()
 gameLoop gamestate = do
@@ -427,4 +451,4 @@ gameLoop gamestate = do
 
 main :: IO ()
 main = do
-    gameLoop (GameState samplePlayer sampleWorld)
+    gameLoop (GameState samplePlayer sampleWorld sampleStateMap)
