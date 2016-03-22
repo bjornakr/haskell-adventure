@@ -66,13 +66,14 @@ type World = [Room]
 type StateMap a = Map.HashMap a (Set.Set String)
 data GameState = GameState Player World (StateMap String)
 instance Show GameState where
-    show (GameState (Player roomId inventory) world _) =
+    show (GameState (Player roomId inventory) world stateMap) =
         (observeEntity roomId world) ++
         "You have " ++ (show inventory) ++ ".\n\n" ++
+        "States: " ++ (show stateMap) ++ ".\n\n" ++
         "What would you like to do?\n" ++
-        "[W]alk to | [L]ook (at) | [P]ick up | [U]se\n" ++
+        "[W]alk to | [L]ook (at) | [P]ick up | Co[M]bine\n" ++
         "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l\n" ++
-        "[O]pen    | [C]lose     |           |       \n"
+        "[O]pen    | [C]lose     | [U]se     |       \n"
 
 data ActionResult = ActionResult GameState String
 data Observation = Observation Id String
@@ -202,9 +203,19 @@ addItemToInventory :: GameState -> Item -> GameState
 addItemToInventory (GameState (Player roomId inventory) world stateMap) item =
     (GameState (Player roomId (item:inventory)) world stateMap)
 
+
+
+removeItemFromInventory :: GameState -> Item -> GameState
+removeItemFromInventory (GameState (Player roomId inventory) world stateMap) item =
+    (GameState (Player roomId (removeEntity item inventory)) world stateMap)
+
+
 removeItemFromWorld :: GameState -> Item -> GameState
 removeItemFromWorld (GameState player world stateMap) item =
     GameState player (map (flip (removeItemFromRoom) item) world) stateMap
+
+destroyItem :: GameState -> Item -> GameState
+destroyItem gamestate item = removeItemFromInventory (removeItemFromWorld gamestate item) item
 
 transferItemFromWorldToPlayer :: GameState -> Item ->  GameState
 transferItemFromWorldToPlayer gamestate item =
@@ -253,8 +264,8 @@ updateItemDescription gamestate (StaticItem (ItemDetails id desc)) newDesc =
 
 
 
-use' :: GameState -> Item -> Item -> Bool -> ActionResult
-use' gamestate item1 item2 reversed =
+combine' :: GameState -> Item -> Item -> Bool -> ActionResult
+combine' gamestate item1 item2 reversed =
     case (getId item1, getId item2) of
         ("Toothbrush", "Toilet") ->
             ActionResult 
@@ -269,16 +280,16 @@ use' gamestate item1 item2 reversed =
                 
         ("JaildoorKey", "Jaildoor") ->
             ActionResult
-                (removeState (removeItemFromWorld gamestate item1) "Jaildoor" "Locked")
+                (removeState (destroyItem gamestate item1) "Jaildoor" "Locked")
                 --(exchangeItem (removeItemFromWorld gamestate item1) item2 (StaticItem (ItemDetails "UnlockedClosedJaildoor" (getDescription item2))))
                 "You hear a click. Amazing, the key worked!"
         _ ->
             case reversed of
                 True -> ActionResult gamestate "You cannot combine those items."
-                False -> use' gamestate item2 item1 True
+                False -> combine' gamestate item2 item1 True
 
-use :: GameState -> Item -> Item -> ActionResult
-use gamestate i1 i2 = use' gamestate i1 i2 False
+combine :: GameState -> Item -> Item -> ActionResult
+combine gamestate i1 i2 = combine' gamestate i1 i2 False
 
 open :: GameState -> Item -> ActionResult
 open gamestate@(GameState (Player roomId inventory) world stateMap) item =
@@ -298,11 +309,28 @@ open gamestate@(GameState (Player roomId inventory) world stateMap) item =
         _ -> ActionResult gamestate ("You cannot open the " ++ (show item))
 
 
-walkTo :: GameState -> Room -> ActionResult
-walkTo (GameState (Player _ inventory) world stateMap) (Room roomId _ _ _) =
-    ActionResult newGameState (show newGameState)
-    where newGameState = GameState (Player roomId inventory) world stateMap
+walkTo :: GameState -> Room -> Room -> ActionResult
+walkTo gamestate@(GameState (Player _ inventory) world stateMap) fromRoom toRoom =
+    case (getId fromRoom) of
+        ("Bathroom") ->
+            case (hasState stateMap "Player" "DirtyHands") of
+                True -> ActionResult gamestate "You didn't wash your hands!!!"
+                False -> ActionResult newGameState (show newGameState)
 
+        _ -> ActionResult newGameState (show newGameState)
+        where newGameState = GameState (Player (getId toRoom) inventory) world stateMap
+
+
+use :: GameState -> Item -> ActionResult
+use gamestate item =
+    case (getId item) of
+        ("Gun") -> ActionResult gamestate "You are out of bullets."
+
+        ("Toilet") -> ActionResult (addState gamestate "Player" "DirtyHands") "You relieve yourself of the pressure."
+
+        ("WashBasin") -> ActionResult (removeState gamestate "Player" "DirtyHands") "You wash your hands thoroughly."
+
+        _ -> ActionResult gamestate $ "You cannot use the " ++ (getId item)
 
 
 ------------------------------------------------------------------------------------
@@ -312,7 +340,7 @@ walkTo (GameState (Player _ inventory) world stateMap) (Room roomId _ _ _) =
 -- data Action = WalkTo Room | LookAt Item | PickUp Item | Use Item Item | Give Item Actor | TalkTo Actor
 --data Action = LookAt (Maybe Item) | LookAt (Maybe Actor) deriving (Show)
 
-data Action = LookAt Id | LookAround | PickUp Id | WalkTo Id | Use Id Id | Open Id | Close Id
+data Action = LookAt Id | LookAround | PickUp Id | WalkTo Id | Combine Id Id | Open Id | Close Id | Use Id
 
 parseAction :: String -> Maybe Action
 parseAction s = parseAction' (splitOn " " s)
@@ -323,7 +351,7 @@ parseAction' (verb:[])
     | otherwise = Nothing
 parseAction' (verb:id1:id2:ids) =
     case verb of
-        "U" -> Just (Use id1 id2)
+        "M" -> Just (Combine id1 id2)
         _ -> Nothing
 parseAction' (verb:id:ids) =
     case verb of
@@ -332,8 +360,8 @@ parseAction' (verb:id:ids) =
         "W" -> Just (WalkTo id)
         "O" -> Just (Open id)
         "C" -> Just (Close id)
+        "U" -> Just (Use id)
         _ -> Nothing
-
 
 
 respondAction :: GameState -> Maybe Action -> ActionResult
@@ -354,25 +382,27 @@ respondValidAction' gamestate@(GameState (Player _ inventory) world _) (Just roo
 respondValidAction' gamestate (Just room) (PickUp id) =
     pickUpSomething gamestate (findItemInRoom room id)
 
-respondValidAction' gamestate@(GameState _ world _) (Just (Room _ exits _ _)) (WalkTo exitId)
-    | elem exitId exits = goSomewhere gamestate (findEntityById exitId world)
+respondValidAction' gamestate@(GameState _ world _) (Just fromRoom@(Room _ exits _ _)) (WalkTo exitId)
+    | elem exitId exits = goSomewhere gamestate fromRoom (findEntityById exitId world)
     | otherwise = ActionResult gamestate ("You cannot go to " ++ exitId)
 
-respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Use id1 id2) =
-    useSomething gamestate (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory))
+respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Combine id1 id2) =
+    combineSomething gamestate (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory))
 
 respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Open id) =
     openSomething gamestate (findEntityById id (inventory ++ items))
 
+respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Use id) =
+    useSomething gamestate (findEntityById id (inventory ++ items))
 
 respondValidAction :: GameState -> Action -> ActionResult
 respondValidAction gamestate@(GameState (Player roomId _) world _) action =
     respondValidAction' gamestate (findEntityById roomId world) action
 
-useSomething :: GameState -> Maybe Item -> Maybe Item -> ActionResult
-useSomething gamestate Nothing _ = ActionResult gamestate "You don't have that."
-useSomething gamestate _ Nothing = ActionResult gamestate "You can't use this with that."
-useSomething gamestate (Just item1) (Just item2) = use gamestate item1 item2
+combineSomething :: GameState -> Maybe Item -> Maybe Item -> ActionResult
+combineSomething gamestate Nothing _ = ActionResult gamestate "You don't have that."
+combineSomething gamestate _ Nothing = ActionResult gamestate "You can't combine those."
+combineSomething gamestate (Just item1) (Just item2) = combine gamestate item1 item2
 
 getObservationsFromRoom :: Room -> World -> [Observation]
 getObservationsFromRoom (Room _ exits items actors) world =
@@ -389,15 +419,24 @@ pickUpSomething gamestate (Just item@(StaticItem _)) =
 pickUpSomething gamestate (Just item@(LooseItem _)) =
     ActionResult (transferItemFromWorldToPlayer gamestate item) ("You pick up the " ++ (show item))
 
-goSomewhere :: GameState -> Maybe Room -> ActionResult
-goSomewhere gamestate Nothing = ActionResult gamestate "You can't go there."
-goSomewhere (GameState (Player _ inventory) world stateMap) (Just (Room roomId _ _ _)) =
-    ActionResult newGameState (show newGameState)
-    where newGameState = GameState (Player roomId inventory) world stateMap
+goSomewhere :: GameState -> Room -> Maybe Room -> ActionResult
+goSomewhere gamestate _ Nothing = ActionResult gamestate "You can't go there."
+goSomewhere gamestate fromRoom (Just toRoom) =
+    walkTo gamestate fromRoom toRoom
+
+
+--goSomewhere (GameState (Player _ inventory) world stateMap) (Just (Room roomId _ _ _)) =
+--    walkTo gamestate 
+    --ActionResult newGameState (show newGameState)
+    --where newGameState = GameState (Player roomId inventory) world stateMap
 
 openSomething :: GameState -> Maybe Item -> ActionResult
 openSomething gamestate Nothing = ActionResult gamestate "You cannot open that."
 openSomething gamestate (Just item) = open gamestate item
+
+useSomething :: GameState -> Maybe Item -> ActionResult
+useSomething gamestate Nothing = ActionResult gamestate "You cannot use that."
+useSomething gamestate (Just item) = use gamestate item
 
 bathroom =
     Room
@@ -407,7 +446,8 @@ bathroom =
         ]
         [
             LooseItem (ItemDetails "Toothbrush" "A sparkling new toothbrush."),
-            StaticItem (ItemDetails "Toilet" "It's one of them fancy toilets.")
+            StaticItem (ItemDetails "Toilet" "It's one of them fancy toilets."),
+            StaticItem (ItemDetails "WashBasin" "A plain old wash basin.")
         ]
         [
             Actor "ToiletMan" [] "The great toilet man looms over thee."
@@ -439,7 +479,7 @@ jail = Room "Jail"
     []
 
 sampleWorld = [library, bathroom, jail]
-samplePlayer = Player "Jail" [LooseItem (ItemDetails "Gun" "It's a good, old Smith & Wesson.")]
+samplePlayer = Player "Bathroom" [LooseItem (ItemDetails "Gun" "It's a good, old Smith & Wesson.")]
 sampleStateMap = Map.singleton "Jaildoor" (Set.singleton "") --  [("Jaildoor", ["Locked"])]
 
 gameLoop :: GameState -> IO ()
