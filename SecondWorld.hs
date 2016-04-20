@@ -58,7 +58,7 @@ instance Entity Room where
     getDescription (Room id exits items actors) = 
         "You are in " ++ id ++ ".\n\n" ++
         "You see " ++ (show items) ++ ".\n\n" ++
-        "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
+        --"There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
         "Exits to " ++ (show exits) ++ ".\n\n"
 
 data Player = Player RoomId Inventory deriving (Show, Eq)
@@ -69,7 +69,7 @@ instance Show GameState where
     show (GameState (Player roomId inventory) world stateMap) =
         (observeEntity roomId world) ++
         "You have " ++ (show inventory) ++ ".\n\n" ++
-        "States: " ++ (show stateMap) ++ ".\n\n" ++
+        --"States: " ++ (show stateMap) ++ ".\n\n" ++
         "What would you like to do?\n" ++
         "[W]alk to | [L]ook (at) | [P]ick up | Co[M]bine\n" ++
         "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l\n" ++
@@ -203,7 +203,9 @@ addItemToInventory :: GameState -> Item -> GameState
 addItemToInventory (GameState (Player roomId inventory) world stateMap) item =
     (GameState (Player roomId (item:inventory)) world stateMap)
 
-
+setPlayerRoom :: GameState -> RoomId -> GameState
+setPlayerRoom (GameState (Player _ inventory) world stateMap) newRoomId =
+    GameState (Player newRoomId inventory) world stateMap
 
 removeItemFromInventory :: GameState -> Item -> GameState
 removeItemFromInventory (GameState (Player roomId inventory) world stateMap) item =
@@ -314,7 +316,10 @@ walkTo gamestate@(GameState (Player _ inventory) world stateMap) fromRoom toRoom
     case (getId fromRoom) of
         ("Bathroom") ->
             case (hasState stateMap "Player" "DirtyHands") of
-                True -> ActionResult gamestate "You didn't wash your hands!!!"
+                True -> ActionResult
+                            newGameState
+                            ("You didn't wash your hands!!! The police catches you and puts you in jail.\n\n" ++ (show newGameState))
+                        where newGameState = (setPlayerRoom (addState (removeState gamestate "Player" "DirtyHands") "Jaildoor" "Locked") "Jail")
                 False -> ActionResult newGameState (show newGameState)
 
         _ -> ActionResult newGameState (show newGameState)
