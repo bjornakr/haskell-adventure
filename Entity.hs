@@ -39,6 +39,12 @@ module Entity where
         | idEq e' e = es
         | otherwise = e:(removeEntity e' es)
 
+    removeEntityById :: Entity a => String -> [a] -> [a]
+    removeEntityById _ [] = []
+    removeEntityById id (e:es)
+        | id == (getId e) = es
+        | otherwise = e:(removeEntityById id es)
+
     exchangeEntity :: Entity a => a -> a -> [a] -> [a]
     exchangeEntity _ _ [] = []
     exchangeEntity oldEntity newEntity (e:es)
