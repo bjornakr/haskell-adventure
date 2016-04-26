@@ -2,6 +2,7 @@ import Data.List.Split
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Set as Set
 import Data.Hashable (Hashable)
+import Entity
 
 ------------------------------------------------------------------------------------
 -- TODO
@@ -15,23 +16,16 @@ import Data.Hashable (Hashable)
 -- DEFINITIONS
 ------------------------------------------------------------------------------------
 
-type Id = String
 type RoomId = Id
 type Inventory = [Item]
 type Description = String
 
-class (Eq a) => Entity a where
-    idEq :: a -> a -> Bool
-    getId :: a -> Id
-    getDescription :: a -> String
-    toObservation :: a -> Observation
-    idEq a1 a2 = getId a1 == getId a2
-    toObservation a = Observation (getId a) (getDescription a)
 
-data Actor = Actor Id [Item] Description deriving (Show, Eq)
+data Actor = Actor Id [Item] Description deriving (Eq)
 instance Entity Actor where
     getId (Actor id _ _) = id
-    getDescription (Actor _ _ desc) = desc
+instance Show Actor where
+    show (Actor _ _ desc) = desc
 
 
 data Item = LooseItem ItemDetails | StaticItem ItemDetails deriving (Eq)
@@ -41,39 +35,43 @@ getItemDetails (StaticItem itemDetails) = itemDetails
 
 instance Show Item where
     show item = show (getItemDetails item)
+
 instance Entity Item where
     getId item = getId (getItemDetails item)    
-    getDescription item = getDescription (getItemDetails item)
 
 data ItemDetails = ItemDetails Id Description deriving (Eq)
 instance Show ItemDetails where
-    show (ItemDetails id _) = id
+    show (ItemDetails _ desc) = desc
 instance Entity ItemDetails where
     getId (ItemDetails id _) = id
-    getDescription (ItemDetails _ desc) = desc
 
-data Room = Room Id [RoomId] [Item] [Actor] deriving (Show, Eq)
+data Room = Room Id [RoomId] [Item] [Actor] deriving (Eq)
 instance Entity Room where
     getId (Room id _ _ _) = id
-    getDescription (Room id exits items actors) = 
+
+instance Show Room where
+    show (Room id exitIds items actors) = 
         "You are in " ++ id ++ ".\n\n" ++
-        "You see " ++ (show items) ++ ".\n\n" ++
+        "You see " ++ (show (map getId items)) ++ ".\n\n" ++
         --"There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
-        "Exits to " ++ (show exits) ++ ".\n\n"
+        "Exits to " ++ (show exitIds) ++ ".\n\n"
 
 data Player = Player RoomId Inventory deriving (Show, Eq)
 type World = [Room]
 type StateMap a = Map.HashMap a (Set.Set String)
 data GameState = GameState Player World (StateMap String)
 instance Show GameState where
-    show (GameState (Player roomId inventory) world stateMap) =
-        (observeEntity roomId world) ++
-        "You have " ++ (show inventory) ++ ".\n\n" ++
-        --"States: " ++ (show stateMap) ++ ".\n\n" ++
-        "What would you like to do?\n" ++
-        "[W]alk to | [L]ook (at) | [P]ick up | Co[M]bine\n" ++
-        "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l\n" ++
-        "[O]pen    | [C]lose     | [U]se     |       \n"
+    show (GameState (Player roomId inventory) rooms stateMap) =
+        case (findEntityById roomId rooms) of
+            Nothing -> error $ "Missing room: " ++ roomId
+            (Just room) ->
+                (show room) ++
+                "You have " ++ (show inventory) ++ ".\n\n" ++
+                --"States: " ++ (show stateMap) ++ ".\n\n" ++
+                "What would you like to do?\n" ++
+                "[W]alk to | [L]ook (at) | [P]ick up | Co[M]bine\n" ++
+                "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l   \n" ++
+                "[O]pen    | [C]lose     | [U]se     |          \n"
 
 data ActionResult = ActionResult GameState String
 data Observation = Observation Id String
@@ -81,61 +79,6 @@ data Observation = Observation Id String
 
 
 
-
-
-------------------------------------------------------------------------------------
--- ENTITY FUNCTIONS
-------------------------------------------------------------------------------------
-addOrUpdateEntity :: (Entity a, Eq a) => a -> [a] -> [a]
-addOrUpdateEntity e es
-    | existingEntity == Nothing = e:es
-    | otherwise = updateEntity e es
-    where
-        existingEntity = findEntity e es
-
-findEntity :: Entity a => a -> [a] -> Maybe a
-findEntity e [] = Nothing
-findEntity e' (e:es)
-    | idEq e' e = Just e'
-    | otherwise = findEntity e' es
-
-findEntityById :: Entity a => Id -> [a] -> Maybe a
-findEntityById id [] = Nothing
-findEntityById id (e:es)
-    | id == (getId e) = Just e
-    | otherwise = findEntityById id es
-
-updateEntity :: Entity a => a -> [a] -> [a]
-updateEntity ue [] = []
-updateEntity ue (e:es)
-    | idEq ue e = ue:es
-    | otherwise = e:(updateEntity ue es)
-
-
-removeEntity :: Entity a => a -> [a] -> [a]
-removeEntity e [] = []
-removeEntity e' (e:es)
-    | idEq e' e = es
-    | otherwise = e:(removeEntity e' es)
-
-exchangeEntity :: Entity a => a -> a -> [a] -> [a]
-exchangeEntity _ _ [] = []
-exchangeEntity oldEntity newEntity (e:es)
-    | idEq oldEntity e = newEntity:es
-    | otherwise = e:(exchangeEntity oldEntity newEntity es)
-
-
-observeEntity' :: Entity a => Maybe a -> String
-observeEntity' Nothing = ""
-observeEntity' (Just e) = getDescription e
-
-observeEntity :: Entity a => Id -> [a] -> String
-observeEntity id entities = observeEntity' (findEntityById id entities)
-
-maybeRoomsToRooms :: Entity a => [Maybe a] -> [a]
-maybeRoomsToRooms [] = []
-maybeRoomsToRooms (Nothing:xs) = maybeRoomsToRooms xs
-maybeRoomsToRooms ((Just x):xs) = x:(maybeRoomsToRooms xs)
 
 ------------------------------------------------------------------------------------
 -- DOMAIN FUNCTIONS
@@ -250,6 +193,9 @@ linkRooms' gamestate room1 room2 = addExit (addExit gamestate room1 room2) room2
 
 linkRooms :: GameState -> Id -> Id -> GameState
 linkRooms gamestate@(GameState _ world _) id1 id2 = linkRooms' gamestate (findEntityById id1 world) (findEntityById id2 world)
+
+toObservation :: (Show a, Entity a) => a -> Observation
+toObservation a = Observation (getId a) (show a)
 
 
 findObservationById :: [Observation] -> Id -> Maybe String
@@ -411,7 +357,7 @@ combineSomething gamestate (Just item1) (Just item2) = combine gamestate item1 i
 
 getObservationsFromRoom :: Room -> World -> [Observation]
 getObservationsFromRoom (Room _ exits items actors) world =
-    (map toObservation (maybeRoomsToRooms (map (flip findEntityById world) exits))) ++ (map toObservation items) ++ (map toObservation actors)
+    (map toObservation items) ++ (map toObservation actors)
 
 lookAtSomething :: GameState -> Maybe String -> ActionResult
 lookAtSomething gamestate Nothing = ActionResult gamestate "You can't look at something that does not exist."

@@ -1,10 +1,9 @@
 module Entity where
     type Id = String
 
-    class (Eq a) => Entity a where
+    class (Eq a, Show a) => Entity a where
         idEq :: a -> a -> Bool
         getId :: a -> Id
-        getDescription :: a -> String
         idEq a1 a2 = getId a1 == getId a2
 
     addOrUpdateEntity :: (Entity a, Eq a) => a -> [a] -> [a]
@@ -21,7 +20,7 @@ module Entity where
         | otherwise = findEntity e' es
 
     findEntityById :: Entity a => Id -> [a] -> Maybe a
-    findEntityById id [] = Nothing
+    findEntityById id [] = Nothing  
     findEntityById id (e:es)
         | id == (getId e) = Just e
         | otherwise = findEntityById id es
@@ -51,10 +50,7 @@ module Entity where
         | idEq oldEntity e = newEntity:es
         | otherwise = e:(exchangeEntity oldEntity newEntity es)
 
-
-    observeEntity' :: Entity a => Maybe a -> String
-    observeEntity' Nothing = ""
-    observeEntity' (Just e) = getDescription e
-
-    observeEntity :: Entity a => Id -> [a] -> String
-    observeEntity id entities = observeEntity' (findEntityById id entities)
+    showEntityById :: Entity a => Id -> [a] -> String
+    showEntityById id entities = case (findEntityById id entities) of
+        Nothing -> ""
+        Just e -> show e

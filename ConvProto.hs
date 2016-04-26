@@ -44,16 +44,13 @@ instance Show Conversation where
 
 instance Entity Response where
     getId (Response { responseId = i }) = i
-    getDescription response = show response
 
 instance Entity ResponseSet where
     getId (ResponseSet { responseSetId = i }) = i
-    getDescription responseSet = getId responseSet
 
 instance Entity Conversation where
     getId (Conversation { conversationId = i }) = i
     getId (ConversationStopper { conversationStopperId = i }) = i
-    getDescription conversation = show conversation
 
 showConversation :: ConversationState -> Conversation -> String
 showConversation (ConversationState _ conversationSets) conv@(Conversation { cResponseSetId = rsId }) =
