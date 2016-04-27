@@ -6,8 +6,12 @@ module Action.Core where
     import Action.WalkTo
     import Action.Open
     import Action.Use
+    import Action.TalkTo
 
-    data Action = LookAt Id | LookAround | PickUp Id | WalkTo Id | Combine Id Id | Open Id | Close Id | Use Id
+    data Action = 
+        LookAt Id | LookAround | PickUp Id | WalkTo Id |
+        Combine Id Id | Open Id | Close Id | Use Id |
+        TalkTo Id
 
     parseAction :: String -> Maybe Action
     parseAction s = parseAction' (splitOn " " s)
@@ -28,6 +32,7 @@ module Action.Core where
             "O" -> Just (Open id)
             "C" -> Just (Close id)
             "U" -> Just (Use id)
+            "T" -> Just (TalkTo id)
             _ -> Nothing
 
 
@@ -61,6 +66,9 @@ module Action.Core where
 
     respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Use id) =
         useSomething gamestate (findEntityById id (inventory ++ items))
+
+    respondValidAction' gamestate (Just (Room _ _ _ actors)) (TalkTo id) =
+        talkToSomeone gamestate (findEntityById id actors)
 
     respondValidAction :: GameState -> Action -> ActionResult
     respondValidAction gamestate@(GameState (Player roomId _) world _) action =
@@ -104,3 +112,7 @@ module Action.Core where
     useSomething :: GameState -> Maybe Item -> ActionResult
     useSomething gamestate Nothing = ActionResult gamestate "You cannot use that."
     useSomething gamestate (Just item) = use gamestate item
+
+    talkToSomeone :: GameState -> Maybe Actor -> ActionResult
+    talkToSomeone gamestate Nothing = ActionResult gamestate "You cannot talk to that."
+    talkToSomeone gamestate (Just actor) = talkTo gamestate actor

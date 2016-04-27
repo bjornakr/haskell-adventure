@@ -3,40 +3,7 @@ import qualified Data.Set as Set
 import Entity
 import Core
 import Action.Core
-
-
-open :: GameState -> Item -> ActionResult
-open gamestate@(GameState (Player roomId inventory) world stateMap) item =
-    case (getId item) of
-        ("Jaildoor") -> 
-            case (hasState stateMap "Jaildoor" "Locked") of
-                True -> ActionResult gamestate "You try the door, but it is locked. Maybe there is a key somewhere..."
-                False ->
-                    ActionResult
-                        (linkRooms (updateItemDescription gamestate item "The jaildoor is wide open.")
-                            roomId "Library")                           
-                        "You open the jaildoor."
-
-        ("Box") ->
-            ActionResult (updateItemDescription gamestate item "The box is open.") "You open the box."
-
-        _ -> ActionResult gamestate ("You cannot open the " ++ (show item))
-
-
-
-use :: GameState -> Item -> ActionResult
-use gamestate item =
-    case (getId item) of
-        ("Gun") -> ActionResult gamestate "You are out of bullets."
-
-        ("Toilet") -> ActionResult (addState gamestate "Player" "DirtyHands") "You relieve yourself of the pressure."
-
-        ("WashBasin") -> ActionResult (removeState gamestate "Player" "DirtyHands") "You wash your hands thoroughly."
-
-        _ -> ActionResult gamestate $ "You cannot use the " ++ (getId item)
-
-
-
+import qualified Conversation
 
 bathroom =
     Room
@@ -86,8 +53,16 @@ gameLoop :: GameState -> IO ()
 gameLoop gamestate = do
     action <- getLine
     let actionResult = respondAction gamestate (parseAction action)
-    putStrLn (getMessageFromActionResult actionResult)
-    gameLoop (getGamestateFromActionResult actionResult)
+    case actionResult of
+        ActionResult gamestate message -> do
+            putStrLn message
+            gameLoop gamestate
+        ConversationTrigger gamestate conversationId -> do
+            Conversation.main
+            gameLoop gamestate
+            
+    --putStrLn (getMessageFromActionResult actionResult)
+    --gameLoop (getGamestateFromActionResult actionResult)
 
 main :: IO ()
 main = do

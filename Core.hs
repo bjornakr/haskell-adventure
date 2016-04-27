@@ -41,7 +41,7 @@ module Core where
         show (Room id exitIds items actors) = 
             "You are in " ++ id ++ ".\n\n" ++
             "You see " ++ (show (map getId items)) ++ ".\n\n" ++
-            --"There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
+            "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
             "Exits to " ++ (show exitIds) ++ ".\n\n"
 
     data Player = Player RoomId Inventory deriving (Show, Eq)
@@ -61,7 +61,7 @@ module Core where
                     "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l   \n" ++
                     "[O]pen    | [C]lose     | [U]se     |          \n"
 
-    data ActionResult = ActionResult GameState String
+    data ActionResult = ActionResult GameState String | ConversationTrigger GameState String
     data Observation = Observation Id String
 
 
@@ -95,12 +95,6 @@ module Core where
 
     removeState :: GameState -> String -> String -> GameState
     removeState (GameState player world stateMap) key val = GameState player world (removeState' stateMap key val)
-
-    getGamestateFromActionResult :: ActionResult -> GameState
-    getGamestateFromActionResult (ActionResult gamestate _) = gamestate
-
-    getMessageFromActionResult :: ActionResult -> String
-    getMessageFromActionResult (ActionResult _ message) = message
 
     addActor :: World -> Room -> Actor -> World
     addActor (rooms) r a = (updateEntity (addActorToRoom r a) rooms)
