@@ -54,12 +54,9 @@ module Core where
                 Nothing -> error $ "Missing room: " ++ roomId
                 (Just room) ->
                     (show room) ++
-                    "You have " ++ (show inventory) ++ ".\n\n" ++
+                    "You have " ++ (show (map getId inventory)) ++ "."
                     --"States: " ++ (show stateMap) ++ ".\n\n" ++
-                    "What would you like to do?\n" ++
-                    "[W]alk to | [L]ook (at) | [P]ick up | Co[M]bine\n" ++
-                    "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l   \n" ++
-                    "[O]pen    | [C]lose     | [U]se     |          \n"
+
 
     data ActionResult = ActionResult GameState String | ConversationTrigger GameState String
     data Observation = Observation Id String

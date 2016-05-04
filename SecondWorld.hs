@@ -4,6 +4,7 @@ import Entity
 import Core
 import Action.Core
 import qualified Conversation
+import System.IO (hFlush, stdout)
 
 bathroom =
     Room
@@ -51,16 +52,24 @@ sampleStateMap = Map.singleton "Jaildoor" (Set.singleton "") --  [("Jaildoor", [
 
 gameLoop :: GameState -> IO ()
 gameLoop gamestate = do
+    putStrLn $ 
+        "\nWhat would you like to do?\n" ++
+        "[W]alk to | [L]ook (at) | [P]ick up | Co[M]bine\n" ++
+        "[G]ive    | [T]alk to   | Pu[S]h    | Pu[L]l   \n" ++
+        "[O]pen    | [C]lose     | [U]se     |          \n"
+    putStr "> "
+    hFlush stdout
+
     action <- getLine
     let actionResult = respondAction gamestate (parseAction action)
-    case actionResult of
+    gs <- case actionResult of
         ActionResult gamestate message -> do
             putStrLn message
-            gameLoop gamestate
+            return gamestate
         ConversationTrigger gamestate conversationId -> do
             Conversation.main
-            gameLoop gamestate
-            
+            return gamestate
+    gameLoop gs
     --putStrLn (getMessageFromActionResult actionResult)
     --gameLoop (getGamestateFromActionResult actionResult)
 

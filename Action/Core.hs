@@ -90,9 +90,9 @@ module Action.Core where
     pickUpSomething :: GameState -> Maybe Item -> ActionResult
     pickUpSomething gamestate Nothing = ActionResult gamestate "How can you pick up that which does not exist?"
     pickUpSomething gamestate (Just item@(StaticItem _)) =
-        ActionResult gamestate ("You cannot pick up the " ++ (show item))
+        ActionResult gamestate ("You cannot pick up the " ++ (getId item))
     pickUpSomething gamestate (Just item@(LooseItem _)) =
-        ActionResult (transferItemFromWorldToPlayer gamestate item) ("You pick up the " ++ (show item))
+        ActionResult (transferItemFromWorldToPlayer gamestate item) ("You pick up the " ++ (getId item))
 
     goSomewhere :: GameState -> Room -> Maybe Room -> ActionResult
     goSomewhere gamestate _ Nothing = ActionResult gamestate "You can't go there."
