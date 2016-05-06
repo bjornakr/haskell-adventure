@@ -61,12 +61,12 @@ gameLoop gamestate = do
     hFlush stdout
 
     action <- getLine
-    let actionResult = respondAction gamestate (parseAction action)
+    let actionResult = respondAction action gamestate
     gs <- case actionResult of
-        ActionResult gamestate message -> do
+        ActionResult message gamestate -> do
             putStrLn message
             return gamestate
-        ConversationTrigger gamestate conversationId -> do
+        ConversationTrigger conversationId gamestate -> do
             Conversation.main
             return gamestate
     gameLoop gs

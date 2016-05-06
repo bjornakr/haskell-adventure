@@ -1,7 +1,8 @@
-module Action.Core where
+module Action.Core (ActionResult, respondAction) where
     import Data.List.Split
     import Entity
-    import Core
+    -- do you need Core?
+    import Core 
     import Action.Combine
     import Action.WalkTo
     import Action.Open
@@ -36,68 +37,67 @@ module Action.Core where
             _ -> Nothing
 
 
-    respondAction :: GameState -> Maybe Action -> ActionResult
-    respondAction gamestate Nothing = ActionResult gamestate "I don't know how to do that, señor.\n"
-    respondAction gamestate (Just action) = respondValidAction gamestate action
+    respondAction :: String -> GameState -> ActionResult
+    respondAction actionString = case (parseAction actionString) of
+            Nothing -> ActionResult "I don't know how to do that, señor.\n"
+            (Just action) -> respondValidAction action
 
+    respondValidAction' :: Maybe Room -> Action -> GameState -> ActionResult
+    respondValidAction' Nothing _ gamestate = ActionResult "Room reference error!" gamestate
 
-    respondValidAction' :: GameState -> Maybe Room -> Action -> ActionResult
-    respondValidAction' gamestate Nothing _ = ActionResult gamestate "Room reference error!"
+    respondValidAction' _ LookAround gamestate = ActionResult (show gamestate) gamestate
 
-    respondValidAction' gamestate _ LookAround = ActionResult gamestate (show gamestate)
+    respondValidAction' (Just room) (LookAt id) gamestate@(GameState (Player _ inventory) world _) =
+        lookAtSomething             
+            (findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room)) id)
+            gamestate
 
-    respondValidAction' gamestate@(GameState (Player _ inventory) world _) (Just room) (LookAt id) = 
-        lookAtSomething 
-            gamestate 
-            (findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room world)) id)
+    respondValidAction' (Just room) (PickUp id) gamestate =
+        pickUpSomething (findItemInRoom room id) gamestate
 
-    respondValidAction' gamestate (Just room) (PickUp id) =
-        pickUpSomething gamestate (findItemInRoom room id)
+    respondValidAction' (Just fromRoom@(Room _ exits _ _)) (WalkTo exitId) gamestate@(GameState _ world _)
+        | elem exitId exits = goSomewhere fromRoom (findEntityById exitId world) gamestate
+        | otherwise = ActionResult ("You cannot go to " ++ exitId) gamestate
 
-    respondValidAction' gamestate@(GameState _ world _) (Just fromRoom@(Room _ exits _ _)) (WalkTo exitId)
-        | elem exitId exits = goSomewhere gamestate fromRoom (findEntityById exitId world)
-        | otherwise = ActionResult gamestate ("You cannot go to " ++ exitId)
+    respondValidAction' (Just (Room _ _ items _)) (Combine id1 id2) gamestate@(GameState (Player _ inventory) _ _) =
+        combineSomething (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory)) gamestate
 
-    respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Combine id1 id2) =
-        combineSomething gamestate (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory))
+    respondValidAction' (Just (Room _ _ items _)) (Open id) gamestate@(GameState (Player _ inventory) _ _) =
+        openSomething (findEntityById id (inventory ++ items)) gamestate
 
-    respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Open id) =
-        openSomething gamestate (findEntityById id (inventory ++ items))
+    respondValidAction' (Just (Room _ _ items _)) (Use id) gamestate@(GameState (Player _ inventory) _ _) =
+        useSomething (findEntityById id (inventory ++ items)) gamestate
 
-    respondValidAction' gamestate@(GameState (Player _ inventory) _ _) (Just (Room _ _ items _)) (Use id) =
-        useSomething gamestate (findEntityById id (inventory ++ items))
+    respondValidAction' (Just (Room _ _ _ actors)) (TalkTo id) gamestate =
+        talkToSomeone (findEntityById id actors) gamestate
 
-    respondValidAction' gamestate (Just (Room _ _ _ actors)) (TalkTo id) =
-        talkToSomeone gamestate (findEntityById id actors)
+    respondValidAction :: Action -> GameState -> ActionResult
+    respondValidAction action gamestate@(GameState (Player roomId _) world _) =
+        respondValidAction' (findEntityById roomId world) action gamestate
 
-    respondValidAction :: GameState -> Action -> ActionResult
-    respondValidAction gamestate@(GameState (Player roomId _) world _) action =
-        respondValidAction' gamestate (findEntityById roomId world) action
+    combineSomething :: Maybe Item -> Maybe Item -> GameState -> ActionResult
+    combineSomething Nothing _ = ActionResult "You don't have that."
+    combineSomething _ Nothing = ActionResult "You can't combine those."
+    combineSomething (Just item1) (Just item2) = combine item1 item2
 
-    combineSomething :: GameState -> Maybe Item -> Maybe Item -> ActionResult
-    combineSomething gamestate Nothing _ = ActionResult gamestate "You don't have that."
-    combineSomething gamestate _ Nothing = ActionResult gamestate "You can't combine those."
-    combineSomething gamestate (Just item1) (Just item2) = combine gamestate item1 item2
+    getObservationsFromRoom :: Room -> [Observation]
+    getObservationsFromRoom (Room _ exits items actors) = (map toObservation items) ++ (map toObservation actors)
 
-    getObservationsFromRoom :: Room -> World -> [Observation]
-    getObservationsFromRoom (Room _ exits items actors) world =
-        (map toObservation items) ++ (map toObservation actors)
+    lookAtSomething :: Maybe String -> GameState -> ActionResult 
+    lookAtSomething Nothing = ActionResult "You can't look at something that does not exist."
+    lookAtSomething (Just s) = ActionResult s
 
-    lookAtSomething :: GameState -> Maybe String -> ActionResult
-    lookAtSomething gamestate Nothing = ActionResult gamestate "You can't look at something that does not exist."
-    lookAtSomething gamestate (Just s) = ActionResult gamestate s
+    pickUpSomething :: Maybe Item -> GameState -> ActionResult
+    pickUpSomething Nothing = ActionResult "How can you pick up that which does not exist?"
+    pickUpSomething (Just item@(StaticItem _)) =
+        ActionResult ("You cannot pick up the " ++ (getId item))
+    pickUpSomething (Just item@(LooseItem _)) =
+        ActionResult ("You pick up the " ++ (getId item))
+        . transferItemFromWorldToPlayer item
 
-    pickUpSomething :: GameState -> Maybe Item -> ActionResult
-    pickUpSomething gamestate Nothing = ActionResult gamestate "How can you pick up that which does not exist?"
-    pickUpSomething gamestate (Just item@(StaticItem _)) =
-        ActionResult gamestate ("You cannot pick up the " ++ (getId item))
-    pickUpSomething gamestate (Just item@(LooseItem _)) =
-        ActionResult (transferItemFromWorldToPlayer gamestate item) ("You pick up the " ++ (getId item))
-
-    goSomewhere :: GameState -> Room -> Maybe Room -> ActionResult
-    goSomewhere gamestate _ Nothing = ActionResult gamestate "You can't go there."
-    goSomewhere gamestate fromRoom (Just toRoom) =
-        walkTo gamestate fromRoom toRoom
+    goSomewhere :: Room -> Maybe Room -> GameState -> ActionResult
+    goSomewhere _ Nothing = ActionResult "You can't go there."
+    goSomewhere fromRoom (Just toRoom) = walkTo fromRoom toRoom
 
 
     --goSomewhere (GameState (Player _ inventory) world stateMap) (Just (Room roomId _ _ _)) =
@@ -105,14 +105,14 @@ module Action.Core where
         --ActionResult newGameState (show newGameState)
         --where newGameState = GameState (Player roomId inventory) world stateMap
 
-    openSomething :: GameState -> Maybe Item -> ActionResult
-    openSomething gamestate Nothing = ActionResult gamestate "You cannot open that."
-    openSomething gamestate (Just item) = open gamestate item
+    openSomething :: Maybe Item -> GameState -> ActionResult 
+    openSomething Nothing = ActionResult "You cannot open that."
+    openSomething (Just item) = open item
 
-    useSomething :: GameState -> Maybe Item -> ActionResult
-    useSomething gamestate Nothing = ActionResult gamestate "You cannot use that."
-    useSomething gamestate (Just item) = use gamestate item
+    useSomething :: Maybe Item -> GameState -> ActionResult
+    useSomething Nothing = ActionResult "You cannot use that."
+    useSomething (Just item) = use item
 
-    talkToSomeone :: GameState -> Maybe Actor -> ActionResult
-    talkToSomeone gamestate Nothing = ActionResult gamestate "You cannot talk to that."
-    talkToSomeone gamestate (Just actor) = talkTo gamestate actor
+    talkToSomeone :: Maybe Actor -> GameState -> ActionResult
+    talkToSomeone Nothing = ActionResult "You cannot talk to that."
+    talkToSomeone (Just actor) = talkTo actor

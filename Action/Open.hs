@@ -1,21 +1,20 @@
 module Action.Open where
     import Entity
     import Core
-
-    open :: GameState -> Item -> ActionResult
-    open gamestate@(GameState (Player roomId inventory) world stateMap) item =
+    
+    open :: Item -> GameState -> ActionResult
+    open item gamestate =
         case (getId item) of
             ("Jaildoor") -> 
-                case (hasState stateMap "Jaildoor" "Locked") of
-                    True -> ActionResult gamestate "You try the door, but it is locked. Maybe there is a key somewhere..."
-                    False ->
-                        ActionResult
-                            (linkRooms (updateItemDescription gamestate item "The jaildoor is wide open.")
-                                roomId "Library")                           
-                            "You open the jaildoor."
+                case (hasState "Jaildoor" "Locked" gamestate) of
+                    True -> ActionResult "You try the door, but it is locked. Maybe there is a key somewhere..." gamestate
+                    False -> (ActionResult "You open the jaildoor."
+                                . linkRooms "Jail" "Library"
+                                . updateItemDescription item "The jaildoor is wide open.") gamestate
 
             ("Box") ->
-                ActionResult (updateItemDescription gamestate item "The box is open.") "You open the box."
+                (ActionResult "You open the box."
+                    . updateItemDescription item "The box is open.") gamestate
 
-            _ -> ActionResult gamestate ("You cannot open the " ++ (show item))
+            _ -> ActionResult ("You cannot open the " ++ (show item)) gamestate
             

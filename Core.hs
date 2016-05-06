@@ -48,10 +48,12 @@ module Core where
     
     type World = [Room]
     
-    type StateMap a = Map.HashMap a (Set.Set String) -- Enables several state per id.
+    type StateMap a = Map.HashMap a (Set.Set String) -- Enables several states per id.
     
     data GameState = GameState Player World (StateMap String)
     
+    data ActionResult = ActionResult String GameState | ConversationTrigger String GameState
+
     instance Show GameState where
         show (GameState (Player roomId inventory) rooms stateMap) =
             case (findEntityById roomId rooms) of
@@ -62,7 +64,6 @@ module Core where
                     --"States: " ++ (show stateMap) ++ ".\n\n" ++
 
 
-    data ActionResult = ActionResult GameState String | ConversationTrigger GameState String
     data Observation = Observation Id String
 
 
@@ -70,8 +71,8 @@ module Core where
     getItemDetails (LooseItem itemDetails) = itemDetails
     getItemDetails (StaticItem itemDetails) = itemDetails
 
-    hasState :: (Eq a, Hashable a) => StateMap a -> a -> String -> Bool
-    hasState stateMap key s =
+    hasState' :: (Eq a, Hashable a) => a -> String -> StateMap a -> Bool
+    hasState' key s stateMap =
         case Map.lookup key stateMap of
              (Just ss) -> Set.member s ss
              Nothing -> False
@@ -89,12 +90,14 @@ module Core where
             (Just ss) -> Map.insert key (Set.delete val ss) stateMap
             Nothing -> stateMap
 
+    addState :: String -> String -> GameState -> GameState
+    addState key val (GameState player world stateMap) = GameState player world (addState' stateMap key val)
 
-    addState :: GameState -> String -> String -> GameState
-    addState (GameState player world stateMap) key val = GameState player world (addState' stateMap key val)
+    removeState :: String -> String -> GameState -> GameState
+    removeState key val (GameState player world stateMap) = GameState player world (removeState' stateMap key val)
 
-    removeState :: GameState -> String -> String -> GameState
-    removeState (GameState player world stateMap) key val = GameState player world (removeState' stateMap key val)
+    hasState :: String -> String -> GameState -> Bool
+    hasState key val (GameState player world stateMap) = hasState' key val stateMap
 
     addActor :: World -> Room -> Actor -> World
     addActor rooms r a = (updateEntity (addActorToRoom r a) rooms)
@@ -118,39 +121,38 @@ module Core where
     findItemInRoom :: Room -> Id -> Maybe Item
     findItemInRoom (Room _ _ items _) id0 = findEntityById id0 items
 
-    updateItemInRoom :: Room -> Item -> Room
-    updateItemInRoom (Room id0 exits items actors) item =
+    updateItemInRoom :: Item -> Room -> Room
+    updateItemInRoom item (Room id0 exits items actors) =
         Room id0 exits (updateEntity item items) actors
 
-    addItemToInventory :: GameState -> Item -> GameState
-    addItemToInventory (GameState (Player roomId inventory) world stateMap) item =
+    addItemToInventory :: Item -> GameState -> GameState
+    addItemToInventory item (GameState (Player roomId inventory) world stateMap) =
         (GameState (Player roomId (item:inventory)) world stateMap)
 
-    setPlayerRoom :: GameState -> RoomId -> GameState
-    setPlayerRoom (GameState (Player _ inventory) world stateMap) newRoomId =
+    movePlayerToRoomId :: RoomId -> GameState -> GameState
+    movePlayerToRoomId newRoomId (GameState (Player _ inventory) world stateMap) =
         GameState (Player newRoomId inventory) world stateMap
 
-    removeItemFromInventory :: GameState -> Item -> GameState
-    removeItemFromInventory (GameState (Player roomId inventory) world stateMap) item =
+    removeItemFromInventory :: Item -> GameState -> GameState
+    removeItemFromInventory item (GameState (Player roomId inventory) world stateMap) =
         (GameState (Player roomId (removeEntity item inventory)) world stateMap)
 
 
-    removeItemFromWorld :: GameState -> Item -> GameState
-    removeItemFromWorld (GameState player world stateMap) item =
+    removeItemFromWorld :: Item -> GameState -> GameState
+    removeItemFromWorld item (GameState player world stateMap) =
         GameState player (map (flip (removeItemFromRoom) item) world) stateMap
 
-    destroyItem :: GameState -> Item -> GameState
-    destroyItem gamestate item = removeItemFromInventory (removeItemFromWorld gamestate item) item
+    destroyItem :: Item -> GameState -> GameState
+    destroyItem item = removeItemFromInventory item . removeItemFromWorld item
 
-    transferItemFromWorldToPlayer :: GameState -> Item ->  GameState
-    transferItemFromWorldToPlayer gamestate item =
-        removeItemFromWorld (addItemToInventory gamestate item) item
+    transferItemFromWorldToPlayer :: Item -> GameState -> GameState
+    transferItemFromWorldToPlayer item = removeItemFromWorld item . addItemToInventory item
 
-    updateItem :: GameState -> Item -> GameState
-    updateItem (GameState (Player roomId inventory) world stateMap) updatedItem =
+    updateItem :: Item -> GameState -> GameState
+    updateItem updatedItem (GameState (Player roomId inventory) world stateMap) =
         GameState 
             (Player roomId (updateEntity updatedItem inventory)) 
-            (map (flip (updateItemInRoom) updatedItem) world)
+            (map (updateItemInRoom updatedItem) world)
             stateMap
 
     exchangeItem :: GameState -> Item -> Item -> GameState
@@ -160,19 +162,18 @@ module Core where
             (map (changeItemsInRoom (exchangeEntity oldItem newItem)) world)
             stateMap
 
-    addExit :: GameState -> Maybe Room -> Maybe Room -> GameState
-    addExit gamestate Nothing _ = gamestate
-    addExit gamestate _ Nothing = gamestate
-    addExit (GameState player world stateMap) (Just (Room roomId exits items actors)) (Just room2)  =
+    addExit :: Maybe Room -> Maybe Room -> GameState -> GameState
+    addExit Nothing _ gamestate = gamestate
+    addExit _ Nothing gamestate = gamestate
+    addExit (Just (Room roomId exits items actors)) (Just room2) (GameState player world stateMap) =
         GameState player (updateEntity (Room roomId ((getId room2):exits) items actors) world) stateMap
 
-    linkRooms' :: GameState -> Maybe Room -> Maybe Room -> GameState
-    linkRooms' gamestate Nothing _ = gamestate
-    linkRooms' gamestate _ Nothing = gamestate
-    linkRooms' gamestate room1 room2 = addExit (addExit gamestate room1 room2) room2 room1
+    linkRooms' :: Maybe Room -> Maybe Room -> GameState -> GameState
+    linkRooms' room1 room2 = addExit room2 room1 . addExit room1 room2
 
-    linkRooms :: GameState -> Id -> Id -> GameState
-    linkRooms gamestate@(GameState _ world _) id1 id2 = linkRooms' gamestate (findEntityById id1 world) (findEntityById id2 world)
+    linkRooms :: Id -> Id -> GameState -> GameState
+    linkRooms id1 id2 gamestate@(GameState _ world _) =
+        linkRooms' (findEntityById id1 world) (findEntityById id2 world) gamestate
 
     toObservation :: (Show a, Entity a) => a -> Observation
     toObservation a = Observation (getId a) (show a)
@@ -184,8 +185,12 @@ module Core where
         | id0 == id1 = Just s
         | otherwise = findObservationById xs id1
 
-    updateItemDescription :: GameState -> Item -> String -> GameState
-    updateItemDescription gamestate (LooseItem (ItemDetails id desc)) newDesc =
-        updateItem gamestate (LooseItem (ItemDetails id newDesc))
-    updateItemDescription gamestate (StaticItem (ItemDetails id desc)) newDesc =
-        updateItem gamestate (StaticItem (ItemDetails id newDesc))
+    updateItemDescription :: Item -> String -> GameState -> GameState
+    updateItemDescription (LooseItem (ItemDetails id desc)) newDesc =
+        updateItem (LooseItem (ItemDetails id newDesc))
+    updateItemDescription (StaticItem (ItemDetails id desc)) newDesc =
+        updateItem (StaticItem (ItemDetails id newDesc))
+
+    movePlayerToRoom :: Room -> GameState -> GameState
+    movePlayerToRoom newRoom (GameState (Player _ inventory) world stateMap) =
+        GameState (Player (getId newRoom) inventory) world stateMap

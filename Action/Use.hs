@@ -1,14 +1,16 @@
 module Action.Use where
     import Entity
     import Core
-
-    use :: GameState -> Item -> ActionResult
-    use gamestate item =
+    
+    use :: Item -> GameState -> ActionResult
+    use item gamestate =
         case (getId item) of
-            ("Gun") -> ActionResult gamestate "You are out of bullets."
+            ("Gun") -> ActionResult "You are out of bullets." gamestate
 
-            ("Toilet") -> ActionResult (addState gamestate "Player" "DirtyHands") "You relieve yourself of the pressure."
+            ("Toilet") -> (ActionResult "You relieve yourself of the pressure."
+                            . addState "Player" "DirtyHands") gamestate
 
-            ("WashBasin") -> ActionResult (removeState gamestate "Player" "DirtyHands") "You wash your hands thoroughly."
+            ("WashBasin") -> (ActionResult "You wash your hands thoroughly."
+                                . removeState "Player" "DirtyHands") gamestate
 
-            _ -> ActionResult gamestate $ "You cannot use the " ++ (getId item)
+            _ -> ActionResult ("You cannot use the " ++ (getId item)) gamestate
