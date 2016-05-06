@@ -11,31 +11,31 @@ module Core where
 
     data Actor = Actor Id [Item] Description deriving (Eq)
     instance Entity Actor where
-        getId (Actor id _ _) = id
+        getId (Actor id0 _ _) = id0
     instance Show Actor where
         show (Actor _ _ desc) = desc
 
 
     data Item = LooseItem ItemDetails | StaticItem ItemDetails deriving (Eq)
-    getItemDetails :: Item -> ItemDetails
-    getItemDetails (LooseItem itemDetails) = itemDetails
-    getItemDetails (StaticItem itemDetails) = itemDetails
+
 
     instance Show Item where
-        show item = show (getItemDetails item)
+        show = show . getItemDetails
 
     instance Entity Item where
-        getId item = getId (getItemDetails item)    
+        getId = getId . getItemDetails
 
     data ItemDetails = ItemDetails Id Description deriving (Eq)
+    
     instance Show ItemDetails where
         show (ItemDetails _ desc) = desc
+    
     instance Entity ItemDetails where
-        getId (ItemDetails id _) = id
+        getId (ItemDetails id0 _) = id0
 
     data Room = Room Id [RoomId] [Item] [Actor] deriving (Eq)
     instance Entity Room where
-        getId (Room id _ _ _) = id
+        getId (Room id0 _ _ _) = id0
 
     instance Show Room where
         show (Room id exitIds items actors) = 
@@ -45,9 +45,13 @@ module Core where
             "Exits to " ++ (show exitIds) ++ ".\n\n"
 
     data Player = Player RoomId Inventory deriving (Show, Eq)
+    
     type World = [Room]
-    type StateMap a = Map.HashMap a (Set.Set String)
+    
+    type StateMap a = Map.HashMap a (Set.Set String) -- Enables several state per id.
+    
     data GameState = GameState Player World (StateMap String)
+    
     instance Show GameState where
         show (GameState (Player roomId inventory) rooms stateMap) =
             case (findEntityById roomId rooms) of
@@ -62,10 +66,9 @@ module Core where
     data Observation = Observation Id String
 
 
-
-
-
-
+    getItemDetails :: Item -> ItemDetails
+    getItemDetails (LooseItem itemDetails) = itemDetails
+    getItemDetails (StaticItem itemDetails) = itemDetails
 
     hasState :: (Eq a, Hashable a) => StateMap a -> a -> String -> Bool
     hasState stateMap key s =
@@ -94,7 +97,7 @@ module Core where
     removeState (GameState player world stateMap) key val = GameState player world (removeState' stateMap key val)
 
     addActor :: World -> Room -> Actor -> World
-    addActor (rooms) r a = (updateEntity (addActorToRoom r a) rooms)
+    addActor rooms r a = (updateEntity (addActorToRoom r a) rooms)
 
     addActorToRoom :: Room -> Actor -> Room
     addActorToRoom (Room rid rs is as) actor = Room rid rs is (addOrUpdateEntity actor as)
@@ -113,11 +116,11 @@ module Core where
     changeItemsInRoom f (Room roomId exits items actors) = Room roomId exits (f items) actors
 
     findItemInRoom :: Room -> Id -> Maybe Item
-    findItemInRoom (Room _ _ items _) id = findEntityById id items
+    findItemInRoom (Room _ _ items _) id0 = findEntityById id0 items
 
     updateItemInRoom :: Room -> Item -> Room
-    updateItemInRoom (Room id exits items actors) item =
-        Room id exits (updateEntity item items) actors
+    updateItemInRoom (Room id0 exits items actors) item =
+        Room id0 exits (updateEntity item items) actors
 
     addItemToInventory :: GameState -> Item -> GameState
     addItemToInventory (GameState (Player roomId inventory) world stateMap) item =
@@ -176,10 +179,10 @@ module Core where
 
 
     findObservationById :: [Observation] -> Id -> Maybe String
-    findObservationById [] id = Nothing
-    findObservationById ((Observation id' s):xs) id
-        | id == id' = Just s
-        | otherwise = findObservationById xs id
+    findObservationById [] _ = Nothing
+    findObservationById ((Observation id0 s):xs) id1
+        | id0 == id1 = Just s
+        | otherwise = findObservationById xs id1
 
     updateItemDescription :: GameState -> Item -> String -> GameState
     updateItemDescription gamestate (LooseItem (ItemDetails id desc)) newDesc =
