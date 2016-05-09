@@ -1,3 +1,5 @@
+{-# DuplicateRecordFields #-}
+
 import qualified Data.HashMap.Strict as Map
 import qualified Data.Set as Set
 import Entity

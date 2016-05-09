@@ -115,8 +115,8 @@ module Core where
     removeItemFromRoom :: Room -> Item -> Room
     removeItemFromRoom (Room rId rs items as) item = (Room rId rs (removeEntity item items) as)
 
-    changeItemsInRoom :: ([Item] -> [Item]) -> Room -> Room
-    changeItemsInRoom f (Room roomId exits items actors) = Room roomId exits (f items) actors
+    --changeItemsInRoom :: ([Item] -> [Item]) -> Room -> Room
+    --changeItemsInRoom f (Room roomId exits items actors) = Room roomId exits (f items) actors
 
     findItemInRoom :: Room -> Id -> Maybe Item
     findItemInRoom (Room _ _ items _) id0 = findEntityById id0 items
@@ -155,12 +155,12 @@ module Core where
             (map (updateItemInRoom updatedItem) world)
             stateMap
 
-    exchangeItem :: GameState -> Item -> Item -> GameState
-    exchangeItem (GameState (Player roomId inventory) world stateMap) oldItem newItem =
-        GameState 
-            (Player roomId (exchangeEntity oldItem newItem inventory)) 
-            (map (changeItemsInRoom (exchangeEntity oldItem newItem)) world)
-            stateMap
+    --exchangeItem :: GameState -> Item -> Item -> GameState
+    --exchangeItem (GameState (Player roomId inventory) world stateMap) oldItem newItem =
+    --    GameState 
+    --        (Player roomId (exchangeEntity oldItem newItem inventory)) 
+    --        (map (changeItemsInRoom (exchangeEntity oldItem newItem)) world)
+    --        stateMap
 
     addExit :: Maybe Room -> Maybe Room -> GameState -> GameState
     addExit Nothing _ gamestate = gamestate
