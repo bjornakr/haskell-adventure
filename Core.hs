@@ -1,6 +1,6 @@
 module Core where 
     import Entity
-    import qualified Data.HashMap.Strict as Map
+    import qualified Data.Map as Map
     import qualified Data.Set as Set
     import Data.Hashable (Hashable)
     
@@ -48,9 +48,9 @@ module Core where
     
     type World = [Room]
     
-    type StateMap a = Map.HashMap a (Set.Set String) -- Enables several states per id.
+    type StateMap = Map.Map String (Set.Set String) -- Enables several states per id.
     
-    data GameState = GameState Player World (StateMap String)
+    data GameState = GameState Player World StateMap
     
     data ActionResult = ActionResult String GameState | ConversationTrigger String GameState
 
@@ -71,30 +71,30 @@ module Core where
     getItemDetails (LooseItem itemDetails) = itemDetails
     getItemDetails (StaticItem itemDetails) = itemDetails
 
-    hasState' :: (Eq a, Hashable a) => a -> String -> StateMap a -> Bool
+    hasState' :: String -> String -> StateMap -> Bool
     hasState' key s stateMap =
         case Map.lookup key stateMap of
              (Just ss) -> Set.member s ss
              Nothing -> False
 
-    addState' :: (Eq a, Hashable a) => StateMap a -> a -> String -> StateMap a
-    addState' stateMap key s =
+    addState' :: String -> String -> StateMap -> StateMap
+    addState' key s stateMap =
         case Map.lookup key stateMap of        
             (Just ss) -> f (Set.insert s ss)
             Nothing -> f (Set.singleton s)
         where f x = (Map.insert key x stateMap)
 
-    removeState' :: (Eq a, Hashable a) => StateMap a -> a -> String -> StateMap a
-    removeState' stateMap key val =
+    removeState' :: String -> String -> StateMap -> StateMap
+    removeState' key val stateMap =
         case Map.lookup key stateMap of
             (Just ss) -> Map.insert key (Set.delete val ss) stateMap
             Nothing -> stateMap
 
     addState :: String -> String -> GameState -> GameState
-    addState key val (GameState player world stateMap) = GameState player world (addState' stateMap key val)
+    addState key val (GameState player world stateMap) = GameState player world (addState' key val stateMap)
 
     removeState :: String -> String -> GameState -> GameState
-    removeState key val (GameState player world stateMap) = GameState player world (removeState' stateMap key val)
+    removeState key val (GameState player world stateMap) = GameState player world (removeState' key val stateMap)
 
     hasState :: String -> String -> GameState -> Bool
     hasState key val (GameState player world stateMap) = hasState' key val stateMap
