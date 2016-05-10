@@ -41,22 +41,22 @@ module Action.Core (respondAction) where
             (Just action) -> respondValidAction action
 
     respondValidAction :: Action -> GameState -> ActionResult
-    respondValidAction action gamestate@(GameState (Player roomId _) world _) =
+    respondValidAction action state@(GameState { gameStatePlayer = (Player roomId _), gameStateWorld = world }) =
         case (findEntityById roomId world) of
-            Just room   -> respondValidAction' room action gamestate
-            Nothing     -> ActionResult "Room reference error!" gamestate
+            Just room   -> respondValidAction' room action state
+            Nothing     -> ActionResult "Room reference error!" state
 
     respondValidAction' :: Room -> Action -> GameState -> ActionResult        
-    respondValidAction' room@(Room _ _ items actors) action gamestate@(GameState (Player _ inventory) _ _) =
+    respondValidAction' room@(Room _ _ items actors) action state@(GameState { gameStatePlayer = (Player _ inventory) }) =
         case action of
-            LookAround      -> ActionResult (show gamestate) gamestate
-            LookAt id0      -> lookAtSomething (observe id0 room gamestate) gamestate
-            PickUp id0      -> pickUpSomething (findItemInRoom room id0) gamestate
-            WalkTo id0      -> goSomewhere room id0 gamestate
-            Combine id1 id2 -> combineSomething (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory)) gamestate
-            Open id0        -> openSomething (findEntityById id0 (inventory ++ items)) gamestate
-            Use id0         -> useSomething (findEntityById id0 (inventory ++ items)) gamestate
-            TalkTo id0      -> talkToSomeone (findEntityById id0 actors) gamestate
+            LookAround      -> ActionResult (show state) state
+            LookAt id0      -> lookAtSomething (observe id0 room state) state
+            PickUp id0      -> pickUpSomething (findItemInRoom room id0) state
+            WalkTo id0      -> goSomewhere room id0 state
+            Combine id1 id2 -> combineSomething (findEntityById id1 inventory) (findEntityById id2 (items ++ inventory)) state
+            Open id0        -> openSomething (findEntityById id0 (inventory ++ items)) state
+            Use id0         -> useSomething (findEntityById id0 (inventory ++ items)) state
+            TalkTo id0      -> talkToSomeone (findEntityById id0 actors) state
 
 
 
@@ -81,12 +81,12 @@ module Action.Core (respondAction) where
         . transferItemFromWorldToPlayer item
 
     goSomewhere :: Room -> Id -> GameState -> ActionResult
-    goSomewhere fromRoom@(Room _ exits _ _) exitId gamestate@(GameState _ world _)
+    goSomewhere fromRoom@(Room _ exits _ _) exitId state@(GameState { gameStateWorld = world })
         | elem exitId exits = case (findEntityById exitId world) of
-                                (Just toRoom)   -> walkTo fromRoom toRoom gamestate
+                                (Just toRoom)   -> walkTo fromRoom toRoom state
                                 Nothing         -> noGo
         | otherwise = noGo 
-        where noGo = ActionResult "You can't go there." gamestate
+        where noGo = ActionResult "You can't go there." state
 
     openSomething :: Maybe Item -> GameState -> ActionResult 
     openSomething Nothing = ActionResult "You cannot open that."
@@ -101,5 +101,5 @@ module Action.Core (respondAction) where
     talkToSomeone (Just actor) = talkTo actor
 
     observe :: Id -> Room -> GameState -> Maybe String
-    observe id0 room (GameState (Player _ inventory) _ _)  =
+    observe id0 room state@(GameState { gameStatePlayer = (Player _ inventory) })  =
         findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room)) id0

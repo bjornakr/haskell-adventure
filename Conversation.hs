@@ -129,12 +129,17 @@ module Conversation where
                 let newState = processResponse rsId rId state
                 talk ncId newState
 
-
     talk :: ConversationId -> ConversationState -> IO ConversationState
-    talk conversationId state@(ConversationState {stateConversations = conversations }) =
+    talk conversationId state@(ConversationState { stateConversations = conversations }) =
         case (findEntityById conversationId conversations) of
             Nothing -> error $ "Could not find conversation id \"" ++ conversationId ++ "\"."
             Just conv@(ConversationStopper {}) -> (putStrLn $ show conv) >> return state
             Just conv -> talkx conv state
+
+    initiateConversation :: String -> ConversationState -> IO ConversationState
+    initiateConversation conversationKey state@(ConversationState { conversationStartMap = conversationStartMap }) =
+        case (Map.lookup conversationKey conversationStartMap) of
+            Nothing -> error $ "Could not find conversation key \"" ++ conversationKey ++ "\"."
+            Just conversationId -> talk conversationId state
 
 

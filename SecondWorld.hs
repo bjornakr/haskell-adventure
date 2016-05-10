@@ -173,12 +173,17 @@ gameLoop gamestate = do
             putStrLn message
             return gamestate
         ConversationTrigger conversationId gamestate -> do
-            Conversation.talk conversationId conversationState
-            return gamestate
+            newConversationState <- initiateConversation conversationId (gameStateConversationState gamestate)
+            return gamestate { gameStateConversationState = newConversationState }
     gameLoop gs
     --putStrLn (getMessageFromActionResult actionResult)
     --gameLoop (getGamestateFromActionResult actionResult)
 
 main :: IO ()
 main = do
-    gameLoop (GameState samplePlayer sampleWorld sampleStateMap)
+    gameLoop (GameState {
+        gameStatePlayer = samplePlayer,
+        gameStateWorld = sampleWorld,
+        gameStateStateMap = sampleStateMap,
+        gameStateConversationState = conversationState
+        })

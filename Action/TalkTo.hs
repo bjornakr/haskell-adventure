@@ -3,4 +3,4 @@ module Action.TalkTo where
     import Core
     
     talkTo :: Actor -> GameState -> ActionResult
-    talkTo actor = ConversationTrigger "ROGER1"
+    talkTo actor = ConversationTrigger "ROGER"
