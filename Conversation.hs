@@ -74,37 +74,28 @@ module Conversation where
     respond :: Response -> [Conversation] -> Maybe Conversation
     respond (Response { nextConversationId = cId }) = findEntityById cId
 
-
-    -- todo point-free possible ?
     num2resp :: Int -> [Response] -> Maybe Response
     num2resp x responses
         | x < 1 = Nothing
         | x > (length responses) = Nothing
         | otherwise = Just (responses !! (x-1))
 
-
-    removeResponse'' :: ResponseId -> ResponseSet -> ResponseSet
-    removeResponse'' rId responseSet@(ResponseSet { responses = rs }) =
-        responseSet { responses = (removeEntityById rId rs) }
-
-
-    removeResponse' :: ResponseId -> [ResponseSet] -> [ResponseSet]
-    removeResponse' _ [] = []
-    removeResponse' rId (rs:rss) = (removeResponse'' rId rs):(removeResponse' rId rss)
-
     removeResponse :: ResponseId -> ConversationState -> ConversationState
     removeResponse rId state@(ConversationState { stateResponseSets = responseSets }) = 
-        state { stateResponseSets = removeResponse' rId responseSets }
-
-    addResponse' :: ResponseSetId -> Response -> [ResponseSet] -> [ResponseSet]
-    addResponse' _ _ [] = []
-    addResponse' rsId response (responseSet@(ResponseSet { responses = resps }):rss)
-        | rsId == (getId responseSet) = (responseSet { responses = (response:resps) }):rss
-        | otherwise = (responseSet:(addResponse' rsId response rss))
+        state { stateResponseSets = map (remove rId) responseSets }
+        where
+            remove :: ResponseId -> ResponseSet -> ResponseSet
+            remove rId responseSet@(ResponseSet { responses = rs }) =
+                responseSet { responses = (removeEntityById rId rs) }
 
     addResponse :: ResponseSetId -> Response -> ConversationState -> ConversationState
     addResponse rsId response state@(ConversationState { stateResponseSets = responseSets }) =
-        state { stateResponseSets = addResponse' rsId response responseSets }
+        state { stateResponseSets = map (add rsId response) responseSets }
+        where
+            add :: ResponseSetId -> Response -> ResponseSet -> ResponseSet
+            add rsId response responseSet@(ResponseSet { responses = resps })
+                | rsId == (getId responseSet) = responseSet { responses = (response:resps) }
+                | otherwise = responseSet
 
     replaceResponse :: ResponseSetId -> ResponseId -> Response -> ConversationState -> ConversationState
     replaceResponse rsId rId newResponse = addResponse rsId newResponse . removeResponse rId
@@ -141,10 +132,9 @@ module Conversation where
 
     talk :: ConversationId -> ConversationState -> IO ConversationState
     talk conversationId state@(ConversationState {stateConversations = conversations }) =
-        let conversation = findEntityById conversationId conversations in
-            case conversation of
-                Nothing -> error $ "Could not find conversation id \"" ++ conversationId ++ "\"."
-                Just conv@(ConversationStopper {}) -> (putStrLn $ show conv) >> return state
-                Just conv -> talkx conv state
+        case (findEntityById conversationId conversations) of
+            Nothing -> error $ "Could not find conversation id \"" ++ conversationId ++ "\"."
+            Just conv@(ConversationStopper {}) -> (putStrLn $ show conv) >> return state
+            Just conv -> talkx conv state
 
 
