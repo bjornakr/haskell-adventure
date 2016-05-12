@@ -4,79 +4,10 @@ module Core where
     import qualified Data.Set as Set
     import Data.Hashable (Hashable)
     import CoreTypes
-    --import Conversation
-    
-    --type RoomId = Id
-    --type Inventory = [Item]
-    --type Description = String
-
-
-    --data Actor = Actor Id [Item] Description deriving (Eq)
-    --instance Entity Actor where
-    --    getId (Actor id0 _ _) = id0
-    --instance Show Actor where
-    --    show (Actor _ _ desc) = desc
-
-
-    --data Item = LooseItem ItemDetails | StaticItem ItemDetails deriving (Eq)
-
-
-    --instance Show Item where
-    --    show = show . getItemDetails
-
-    --instance Entity Item where
-    --    getId = getId . getItemDetails
-
-    --data ItemDetails = ItemDetails Id Description deriving (Eq)
-    
-    --instance Show ItemDetails where
-    --    show (ItemDetails _ desc) = desc
-    
-    --instance Entity ItemDetails where
-    --    getId (ItemDetails id0 _) = id0
-
-    --data Room = Room Id [RoomId] [Item] [Actor] deriving (Eq)
-    --instance Entity Room where
-    --    getId (Room id0 _ _ _) = id0
-
-    --instance Show Room where
-    --    show (Room id exitIds items actors) = 
-    --        "You are in " ++ id ++ ".\n\n" ++
-    --        "You see " ++ (show (map getId items)) ++ ".\n\n" ++
-    --        "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
-    --        "Exits to " ++ (show exitIds) ++ ".\n\n"
-
-    --data Player = Player RoomId Inventory deriving (Show, Eq)
-    
-    --type World = [Room]
-    
-    --type StateMap = Map.Map String (Set.Set String) -- Enables several states per id.
-    
-    --data GameState = GameState {
-    --    gameStatePlayer :: Player,
-    --    gameStateWorld :: World,
-    --    gameStateStateMap :: StateMap,
-    --    gameStateConversationState :: ConversationState
-    --}
     
     data ActionResult = ActionResult String GameState | ConversationTrigger String GameState
-
-    --instance Show GameState where
-    --    show (GameState { gameStatePlayer = (Player roomId inventory), gameStateWorld = rooms, gameStateStateMap = stateMap }) =
-    --        case (findEntityById roomId rooms) of
-    --            Nothing -> error $ "Missing room: " ++ roomId
-    --            (Just room) ->
-    --                (show room) ++
-    --                "You have " ++ (show (map getId inventory)) ++ "."
-                    --"States: " ++ (show stateMap) ++ ".\n\n" ++
-
-
     data Observation = Observation Id String
 
-
-    --getItemDetails :: Item -> ItemDetails
-    --getItemDetails (LooseItem itemDetails) = itemDetails
-    --getItemDetails (StaticItem itemDetails) = itemDetails
 
     hasState' :: String -> String -> StateMap -> Bool
     hasState' key s stateMap =
@@ -117,15 +48,8 @@ module Core where
     addItemToRoom :: Room -> Item -> Room
     addItemToRoom (Room rId rs items as) item = Room rId rs (addOrUpdateEntity item items) as
 
-    --removeItemFromRooms :: Item -> [Room] -> [Room]
-    --removeItemFromRooms [] item = []
-    --removeItemFromRooms item (room:rooms) = (removeItemFromRoom room item):(removeItemFromRooms rooms item)
-
     removeItemFromRoom :: Item -> Room -> Room
     removeItemFromRoom item (Room rId rs items as) = (Room rId rs (removeEntity item items) as)
-
-    --changeItemsInRoom :: ([Item] -> [Item]) -> Room -> Room
-    --changeItemsInRoom f (Room roomId exits items actors) = Room roomId exits (f items) actors
 
     findItemInRoom :: Room -> Id -> Maybe Item
     findItemInRoom (Room _ _ items _) id0 = findEntityById id0 items

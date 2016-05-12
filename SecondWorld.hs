@@ -177,8 +177,6 @@ gameLoop gamestate = do
         ConversationTrigger conversationId gamestate -> 
             initiateConversation conversationId gamestate            
     gameLoop gs
-    --putStrLn (getMessageFromActionResult actionResult)
-    --gameLoop (getGamestateFromActionResult actionResult)
 
 main :: IO ()
 main = do
