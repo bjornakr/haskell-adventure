@@ -1,5 +1,6 @@
 module Action.WalkTo where
     import Entity
+    import CoreTypes
     import Core
     
     walkTo :: Room -> Room -> GameState -> ActionResult

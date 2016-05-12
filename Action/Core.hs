@@ -1,6 +1,7 @@
 module Action.Core (respondAction) where
     import Data.List.Split
     import Entity
+    import CoreTypes
     import Core 
     import Action.Combine
     import Action.WalkTo
@@ -41,13 +42,13 @@ module Action.Core (respondAction) where
             (Just action) -> respondValidAction action
 
     respondValidAction :: Action -> GameState -> ActionResult
-    respondValidAction action state@(GameState { gameStatePlayer = (Player roomId _), gameStateWorld = world }) =
+    respondValidAction action state@(GameState { player = (Player roomId _), world = world }) =
         case (findEntityById roomId world) of
             Just room   -> respondValidAction' room action state
             Nothing     -> ActionResult "Room reference error!" state
 
     respondValidAction' :: Room -> Action -> GameState -> ActionResult        
-    respondValidAction' room@(Room _ _ items actors) action state@(GameState { gameStatePlayer = (Player _ inventory) }) =
+    respondValidAction' room@(Room _ _ items actors) action state@(GameState { player = (Player _ inventory) }) =
         case action of
             LookAround      -> ActionResult (show state) state
             LookAt id0      -> lookAtSomething (observe id0 room state) state
@@ -81,7 +82,7 @@ module Action.Core (respondAction) where
         . transferItemFromWorldToPlayer item
 
     goSomewhere :: Room -> Id -> GameState -> ActionResult
-    goSomewhere fromRoom@(Room _ exits _ _) exitId state@(GameState { gameStateWorld = world })
+    goSomewhere fromRoom@(Room _ exits _ _) exitId state@(GameState { world = world })
         | elem exitId exits = case (findEntityById exitId world) of
                                 (Just toRoom)   -> walkTo fromRoom toRoom state
                                 Nothing         -> noGo
@@ -101,5 +102,5 @@ module Action.Core (respondAction) where
     talkToSomeone (Just actor) = talkTo actor
 
     observe :: Id -> Room -> GameState -> Maybe String
-    observe id0 room state@(GameState { gameStatePlayer = (Player _ inventory) })  =
+    observe id0 room state@(GameState { player = (Player _ inventory) })  =
         findObservationById ((map toObservation inventory) ++ (getObservationsFromRoom room)) id0

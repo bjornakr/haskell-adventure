@@ -1,8 +1,10 @@
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Entity
+import CoreTypes
 import Core
 import Action.Core
+import ConversationTypes
 import Conversation
 import System.IO (hFlush, stdout)
 
@@ -50,10 +52,10 @@ sampleWorld = [library, bathroom, jail]
 samplePlayer = Player "Bathroom" [LooseItem (ItemDetails "Gun" "It's a good, old Smith & Wesson.")]
 sampleStateMap = Map.singleton "Jaildoor" (Set.singleton "") --  [("Jaildoor", ["Locked"])]
 
-conversationState = ConversationState
-                        [roger1, roger2, roger3, roger4, roger5, roger6, roger7, rogbye1, rogbye2, rogbye3] 
-                        [rogres1, rogres2, rogres3, rogres4, rogres5]                
-                        (Map.fromList [("ROGER", "ROGER1")])
+convState = ConversationState
+                [roger1, roger2, roger3, roger4, roger5, roger6, roger7, rogbye1, rogbye2, rogbye3] 
+                [rogres1, rogres2, rogres3, rogres4, rogres5]                
+                (Map.fromList [("ROGER", "ROGER1")])
 
 roger1 = Conversation {
     conversationId = "ROGER1",
@@ -172,9 +174,8 @@ gameLoop gamestate = do
         ActionResult message gamestate -> do
             putStrLn message
             return gamestate
-        ConversationTrigger conversationId gamestate -> do
-            newConversationState <- initiateConversation conversationId (gameStateConversationState gamestate)
-            return gamestate { gameStateConversationState = newConversationState }
+        ConversationTrigger conversationId gamestate -> 
+            initiateConversation conversationId gamestate            
     gameLoop gs
     --putStrLn (getMessageFromActionResult actionResult)
     --gameLoop (getGamestateFromActionResult actionResult)
@@ -182,8 +183,8 @@ gameLoop gamestate = do
 main :: IO ()
 main = do
     gameLoop (GameState {
-        gameStatePlayer = samplePlayer,
-        gameStateWorld = sampleWorld,
-        gameStateStateMap = sampleStateMap,
-        gameStateConversationState = conversationState
+        player = samplePlayer,
+        world = sampleWorld,
+        stateMap = sampleStateMap,
+        conversationState = convState
         })

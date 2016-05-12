@@ -1,5 +1,6 @@
 module Action.Combine where    
     import Entity
+    import CoreTypes
     import Core
 
     combine' :: Item -> Item -> Bool-> GameState -> ActionResult

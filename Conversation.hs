@@ -3,63 +3,66 @@ module Conversation where
     import qualified Data.Map as Map
     import System.IO (hFlush, stdout)
     import Entity
+    import ConversationTypes
+    import CoreTypes
+    import Core
 
-    type ConversationId = String
-    type ResponseSetId = String
-    type ResponseId = String
+    --type ConversationId = String
+    --type ResponseSetId = String
+    --type ResponseId = String
 
-    data Response = Response {
-        responseId :: String,
-        nextConversationId :: String,
-        responseText :: String
-    } deriving (Eq)
+    --data Response = Response {
+    --    responseId :: String,
+    --    nextConversationId :: String,
+    --    responseText :: String
+    --} deriving (Eq)
 
-    data ResponseSet = ResponseSet {
-        responseSetId :: String,
-        responses :: [Response]
-    } deriving (Eq)
+    --data ResponseSet = ResponseSet {
+    --    responseSetId :: String,
+    --    responses :: [Response]
+    --} deriving (Eq)
 
-    data Conversation = 
-        Conversation {
-            conversationId :: String,
-            conversationText :: String,
-            cResponseSetId :: String
-        } 
-        | ConversationStopper {
-            conversationStopperId :: String,
-            conversationStopperText :: String
-        } deriving (Eq)
+    --data Conversation = 
+    --    Conversation {
+    --        conversationId :: String,
+    --        conversationText :: String,
+    --        cResponseSetId :: String
+    --    } 
+    --    | ConversationStopper {
+    --        conversationStopperId :: String,
+    --        conversationStopperText :: String
+    --    } deriving (Eq)
 
 
-    data ConversationState = ConversationState {
-        stateConversations :: [Conversation],
-        stateResponseSets :: [ResponseSet],
-        conversationStartMap :: (Map.Map String String)
-    }
+    --data ConversationState = ConversationState {
+    --    stateConversations :: [Conversation],
+    --    stateResponseSets :: [ResponseSet],
+    --    conversationStartMap :: (Map.Map String String)
+    --}
 
-    instance Show Response where
-        show r = responseText r
+    --instance Show Response where
+    --    show r = responseText r
 
-    instance Show ResponseSet where
-        show ResponseSet { responses = rs } = (concat (map showResponse (zip [1..] rs)))
-            where showResponse (no, response) = (show no) ++ ") " ++ show response ++ "\n"
+    --instance Show ResponseSet where
+    --    show ResponseSet { responses = rs } = (concat (map showResponse (zip [1..] rs)))
+    --        where showResponse (no, response) = (show no) ++ ") " ++ show response ++ "\n"
 
-    instance Show Conversation where
-        show (Conversation { conversationText = text }) = text
-        show (ConversationStopper { conversationStopperText = text }) = text
+    --instance Show Conversation where
+    --    show (Conversation { conversationText = text }) = text
+    --    show (ConversationStopper { conversationStopperText = text }) = text
 
-    instance Entity Response where
-        getId (Response { responseId = i }) = i
+    --instance Entity Response where
+    --    getId (Response { responseId = i }) = i
 
-    instance Entity ResponseSet where
-        getId (ResponseSet { responseSetId = i }) = i
+    --instance Entity ResponseSet where
+    --    getId (ResponseSet { responseSetId = i }) = i
 
-    instance Entity Conversation where
-        getId (Conversation { conversationId = i }) = i
-        getId (ConversationStopper { conversationStopperId = i }) = i
+    --instance Entity Conversation where
+    --    getId (Conversation { conversationId = i }) = i
+    --    getId (ConversationStopper { conversationStopperId = i }) = i
 
-    showConversation :: Conversation -> ConversationState -> String
-    showConversation conv@(Conversation { cResponseSetId = rsId }) (ConversationState { stateResponseSets = responseSets }) =
+    showConversation :: Conversation -> GameState -> String
+    showConversation conv@(Conversation { cResponseSetId = rsId }) (GameState { conversationState = ConversationState { stateResponseSets = responseSets }}) =
         case (findEntityById rsId responseSets) of
             Nothing -> error $ "Could not find response set " ++ rsId
             (Just rs) -> (show conv) ++ "\n\n" ++ (show rs)
@@ -104,9 +107,14 @@ module Conversation where
     insertInConversationStartMap key val state@(ConversationState { conversationStartMap = sm }) = 
         state { conversationStartMap = Map.insert key val sm }
 
+-- TODO: When gamestate is included
+    --showResponse :: Response -> ConversationState -> Bool
+    --showResponse responseId _ =
+    --    case responseId of
+    --        _ -> True
 
-    processResponse :: ResponseSetId -> ResponseId -> ConversationState -> ConversationState
-    processResponse rsId rId =
+    processResponse' :: ResponseSetId -> ResponseId -> ConversationState -> ConversationState
+    processResponse' rsId rId =
         case rId of
             "ROGRES1c" -> insertInConversationStartMap "ROGER" "ROGER3"
             "ROGRES3a" -> replaceResponse "ROGRES3" rId rognew1
@@ -116,28 +124,33 @@ module Conversation where
             rognew1 = Response "ROGNEW1" "ROGER5" "Who did you say your contact in Ergo group was?"
             rognew2 = Response "ROGNEW2" "ROGER7" "Are you sure Dorothy didn't mention anything unusual?"
 
-    talkx conv@(Conversation { cResponseSetId = rsId }) state = do
-        putStrLn $ showConversation conv state
+    processResponse :: ResponseSetId -> ResponseId -> GameState -> GameState
+    processResponse rsId rId state@(GameState { conversationState = conversationState }) =
+        state { conversationState = processResponse' rsId rId conversationState }
+
+    talkx :: Conversation -> GameState -> IO GameState
+    talkx conv@(Conversation { cResponseSetId = rsId }) (gameState@GameState { conversationState = conversationState }) = do
+        putStrLn $ showConversation conv gameState
         putStr "> "
         hFlush stdout
         choice <- readLn :: IO Int
-        let response = num2resp choice (getResponses conv state)
+        let response = num2resp choice (getResponses conv conversationState)
         case response of
             Nothing -> do
-                talkx conv state
+                talkx conv gameState
             Just resp@(Response { responseId = rId, nextConversationId = ncId }) -> do
-                let newState = processResponse rsId rId state
-                talk ncId newState
+                let newGameState = processResponse rsId rId gameState
+                talk ncId newGameState
 
-    talk :: ConversationId -> ConversationState -> IO ConversationState
-    talk conversationId state@(ConversationState { stateConversations = conversations }) =
+    talk :: ConversationId -> GameState -> IO GameState
+    talk conversationId state@(GameState { conversationState = ConversationState { stateConversations = conversations }}) =
         case (findEntityById conversationId conversations) of
             Nothing -> error $ "Could not find conversation id \"" ++ conversationId ++ "\"."
             Just conv@(ConversationStopper {}) -> (putStrLn $ show conv) >> return state
             Just conv -> talkx conv state
 
-    initiateConversation :: String -> ConversationState -> IO ConversationState
-    initiateConversation conversationKey state@(ConversationState { conversationStartMap = conversationStartMap }) =
+    initiateConversation :: String -> GameState -> IO GameState
+    initiateConversation conversationKey state@(GameState { conversationState = ConversationState { conversationStartMap = conversationStartMap }}) =
         case (Map.lookup conversationKey conversationStartMap) of
             Nothing -> error $ "Could not find conversation key \"" ++ conversationKey ++ "\"."
             Just conversationId -> talk conversationId state

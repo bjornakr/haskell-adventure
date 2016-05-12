@@ -3,79 +3,80 @@ module Core where
     import qualified Data.Map as Map
     import qualified Data.Set as Set
     import Data.Hashable (Hashable)
-    import Conversation
+    import CoreTypes
+    --import Conversation
     
-    type RoomId = Id
-    type Inventory = [Item]
-    type Description = String
+    --type RoomId = Id
+    --type Inventory = [Item]
+    --type Description = String
 
 
-    data Actor = Actor Id [Item] Description deriving (Eq)
-    instance Entity Actor where
-        getId (Actor id0 _ _) = id0
-    instance Show Actor where
-        show (Actor _ _ desc) = desc
+    --data Actor = Actor Id [Item] Description deriving (Eq)
+    --instance Entity Actor where
+    --    getId (Actor id0 _ _) = id0
+    --instance Show Actor where
+    --    show (Actor _ _ desc) = desc
 
 
-    data Item = LooseItem ItemDetails | StaticItem ItemDetails deriving (Eq)
+    --data Item = LooseItem ItemDetails | StaticItem ItemDetails deriving (Eq)
 
 
-    instance Show Item where
-        show = show . getItemDetails
+    --instance Show Item where
+    --    show = show . getItemDetails
 
-    instance Entity Item where
-        getId = getId . getItemDetails
+    --instance Entity Item where
+    --    getId = getId . getItemDetails
 
-    data ItemDetails = ItemDetails Id Description deriving (Eq)
+    --data ItemDetails = ItemDetails Id Description deriving (Eq)
     
-    instance Show ItemDetails where
-        show (ItemDetails _ desc) = desc
+    --instance Show ItemDetails where
+    --    show (ItemDetails _ desc) = desc
     
-    instance Entity ItemDetails where
-        getId (ItemDetails id0 _) = id0
+    --instance Entity ItemDetails where
+    --    getId (ItemDetails id0 _) = id0
 
-    data Room = Room Id [RoomId] [Item] [Actor] deriving (Eq)
-    instance Entity Room where
-        getId (Room id0 _ _ _) = id0
+    --data Room = Room Id [RoomId] [Item] [Actor] deriving (Eq)
+    --instance Entity Room where
+    --    getId (Room id0 _ _ _) = id0
 
-    instance Show Room where
-        show (Room id exitIds items actors) = 
-            "You are in " ++ id ++ ".\n\n" ++
-            "You see " ++ (show (map getId items)) ++ ".\n\n" ++
-            "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
-            "Exits to " ++ (show exitIds) ++ ".\n\n"
+    --instance Show Room where
+    --    show (Room id exitIds items actors) = 
+    --        "You are in " ++ id ++ ".\n\n" ++
+    --        "You see " ++ (show (map getId items)) ++ ".\n\n" ++
+    --        "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
+    --        "Exits to " ++ (show exitIds) ++ ".\n\n"
 
-    data Player = Player RoomId Inventory deriving (Show, Eq)
+    --data Player = Player RoomId Inventory deriving (Show, Eq)
     
-    type World = [Room]
+    --type World = [Room]
     
-    type StateMap = Map.Map String (Set.Set String) -- Enables several states per id.
+    --type StateMap = Map.Map String (Set.Set String) -- Enables several states per id.
     
-    data GameState = GameState {
-        gameStatePlayer :: Player,
-        gameStateWorld :: World,
-        gameStateStateMap :: StateMap,
-        gameStateConversationState :: ConversationState
-    }
+    --data GameState = GameState {
+    --    gameStatePlayer :: Player,
+    --    gameStateWorld :: World,
+    --    gameStateStateMap :: StateMap,
+    --    gameStateConversationState :: ConversationState
+    --}
     
     data ActionResult = ActionResult String GameState | ConversationTrigger String GameState
 
-    instance Show GameState where
-        show (GameState { gameStatePlayer = (Player roomId inventory), gameStateWorld = rooms, gameStateStateMap = stateMap }) =
-            case (findEntityById roomId rooms) of
-                Nothing -> error $ "Missing room: " ++ roomId
-                (Just room) ->
-                    (show room) ++
-                    "You have " ++ (show (map getId inventory)) ++ "."
+    --instance Show GameState where
+    --    show (GameState { gameStatePlayer = (Player roomId inventory), gameStateWorld = rooms, gameStateStateMap = stateMap }) =
+    --        case (findEntityById roomId rooms) of
+    --            Nothing -> error $ "Missing room: " ++ roomId
+    --            (Just room) ->
+    --                (show room) ++
+    --                "You have " ++ (show (map getId inventory)) ++ "."
                     --"States: " ++ (show stateMap) ++ ".\n\n" ++
 
 
     data Observation = Observation Id String
 
 
-    getItemDetails :: Item -> ItemDetails
-    getItemDetails (LooseItem itemDetails) = itemDetails
-    getItemDetails (StaticItem itemDetails) = itemDetails
+    --getItemDetails :: Item -> ItemDetails
+    --getItemDetails (LooseItem itemDetails) = itemDetails
+    --getItemDetails (StaticItem itemDetails) = itemDetails
 
     hasState' :: String -> String -> StateMap -> Bool
     hasState' key s stateMap =
@@ -97,15 +98,15 @@ module Core where
             Nothing -> stateMap
 
     addState :: String -> String -> GameState -> GameState
-    addState key val state@(GameState { gameStateStateMap = stateMap }) =
-        state { gameStateStateMap = addState' key val stateMap }
+    addState key val state@(GameState { stateMap = stateMap }) =
+        state { stateMap = addState' key val stateMap }
 
     removeState :: String -> String -> GameState -> GameState
-    removeState key val state@(GameState { gameStateStateMap = stateMap }) =
-        state { gameStateStateMap = removeState' key val stateMap }
+    removeState key val state@(GameState { stateMap = stateMap }) =
+        state { stateMap = removeState' key val stateMap }
 
     hasState :: String -> String -> GameState -> Bool
-    hasState key val = hasState' key val . gameStateStateMap
+    hasState key val = hasState' key val . stateMap
 
     addActor :: World -> Room -> Actor -> World
     addActor rooms r a = (updateEntity (addActorToRoom r a) rooms)
@@ -134,20 +135,20 @@ module Core where
         Room id0 exits (updateEntity item items) actors
 
     addItemToInventory :: Item -> GameState -> GameState
-    addItemToInventory item state@(GameState { gameStatePlayer = (Player roomId inventory) }) =
-        state { gameStatePlayer = Player roomId (item:inventory) }
+    addItemToInventory item state@(GameState { player = (Player roomId inventory) }) =
+        state { player = Player roomId (item:inventory) }
 
     removeItemFromInventory :: Item -> GameState -> GameState
-    removeItemFromInventory item state@(GameState { gameStatePlayer = (Player roomId inventory) }) =
-        state { gameStatePlayer = Player roomId (removeEntity item inventory) }
+    removeItemFromInventory item state@(GameState { player = (Player roomId inventory) }) =
+        state { player = Player roomId (removeEntity item inventory) }
     
     movePlayerToRoomId :: RoomId -> GameState -> GameState
-    movePlayerToRoomId newRoomId state@(GameState { gameStatePlayer = (Player _ inventory) }) =
-        state { gameStatePlayer = Player newRoomId inventory }
+    movePlayerToRoomId newRoomId state@(GameState { player = (Player _ inventory) }) =
+        state { player = Player newRoomId inventory }
 
     removeItemFromWorld :: Item -> GameState -> GameState
-    removeItemFromWorld item state@(GameState { gameStateWorld = world }) =
-        state { gameStateWorld = map (removeItemFromRoom item) world }
+    removeItemFromWorld item state@(GameState { world = world }) =
+        state { world = map (removeItemFromRoom item) world }
 
     destroyItem :: Item -> GameState -> GameState
     destroyItem item = removeItemFromInventory item . removeItemFromWorld item
@@ -156,10 +157,10 @@ module Core where
     transferItemFromWorldToPlayer item = removeItemFromWorld item . addItemToInventory item
 
     updateItem :: Item -> GameState -> GameState
-    updateItem updatedItem state@(GameState { gameStatePlayer = (Player roomId inventory), gameStateWorld = world }) =
+    updateItem updatedItem state@(GameState { player = (Player roomId inventory), world = world }) =
         state { 
-            gameStatePlayer = (Player roomId (updateEntity updatedItem inventory)),
-            gameStateWorld = map (updateItemInRoom updatedItem) world
+            player = (Player roomId (updateEntity updatedItem inventory)),
+            world = map (updateItemInRoom updatedItem) world
         }
 
     --exchangeItem :: GameState -> Item -> Item -> GameState
@@ -172,14 +173,14 @@ module Core where
     addExit :: Maybe Room -> Maybe Room -> GameState -> GameState
     addExit Nothing _ gamestate = gamestate
     addExit _ Nothing gamestate = gamestate
-    addExit (Just (Room roomId exits items actors)) (Just room2) state@(GameState { gameStateWorld = world }) =
-        state { gameStateWorld = updateEntity (Room roomId ((getId room2):exits) items actors) world }
+    addExit (Just (Room roomId exits items actors)) (Just room2) state@(GameState { world = world }) =
+        state { world = updateEntity (Room roomId ((getId room2):exits) items actors) world }
 
     linkRooms' :: Maybe Room -> Maybe Room -> GameState -> GameState
     linkRooms' room1 room2 = addExit room2 room1 . addExit room1 room2
 
     linkRooms :: Id -> Id -> GameState -> GameState
-    linkRooms id1 id2 state@(GameState { gameStateWorld = world }) =
+    linkRooms id1 id2 state@(GameState { world = world }) =
         linkRooms' (findEntityById id1 world) (findEntityById id2 world) state
 
     toObservation :: (Show a, Entity a) => a -> Observation
@@ -199,5 +200,5 @@ module Core where
         updateItem (StaticItem (ItemDetails id newDesc))
 
     movePlayerToRoom :: Room -> GameState -> GameState
-    movePlayerToRoom newRoom state@(GameState { gameStatePlayer = Player _ inventory }) =
-        state { gameStatePlayer = Player (getId newRoom) inventory }
+    movePlayerToRoom newRoom state@(GameState { player = Player _ inventory }) =
+        state { player = Player (getId newRoom) inventory }

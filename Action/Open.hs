@@ -1,5 +1,6 @@
 module Action.Open where
     import Entity
+    import CoreTypes
     import Core
     
     open :: Item -> GameState -> ActionResult
