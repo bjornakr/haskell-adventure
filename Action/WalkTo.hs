@@ -5,11 +5,11 @@ module Action.WalkTo where
     
     walkTo :: Room -> Room -> GameState -> ActionResult
     walkTo fromRoom toRoom gamestate =
-        case (getId fromRoom) of
-            ("Bathroom") ->
-                case (hasState "Player" "DirtyHands" gamestate) of
-                    True -> unwashedHands gamestate
-                    False -> ActionResult (show newGameState) newGameState
+        case getId fromRoom of
+            "Bathroom" ->
+                if hasState "Player" "DirtyHands" gamestate
+                    then unwashedHands gamestate
+                    else ActionResult (show newGameState) newGameState
 
             _ -> ActionResult (show newGameState) newGameState
             where newGameState = movePlayerToRoom toRoom gamestate
@@ -18,7 +18,7 @@ module Action.WalkTo where
     unwashedHands gamestate =
         ActionResult 
             ("You didn't wash your hands!!! The police catches you and puts you in jail.\n\n" 
-                ++ (show newGameState)) newGameState
+                ++ show newGameState) newGameState
         where newGameState = (movePlayerToRoomId "Jail"
                                . addState "Jaildoor" "Locked"
                                . removeState "Player" "DirtyHands") gamestate

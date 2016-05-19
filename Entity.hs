@@ -22,35 +22,36 @@ module Entity where
     findEntityById :: Entity a => Id -> [a] -> Maybe a
     findEntityById id [] = Nothing  
     findEntityById id (e:es)
-        | id == (getId e) = Just e
+        | id == getId e = Just e
         | otherwise = findEntityById id es
 
     updateEntity :: Entity a => a -> [a] -> [a]
     updateEntity ue [] = []
     updateEntity ue (e:es)
         | idEq ue e = ue:es
-        | otherwise = e:(updateEntity ue es)
+        | otherwise = e : updateEntity ue es
 
 
     removeEntity :: Entity a => a -> [a] -> [a]
     removeEntity e [] = []
     removeEntity e' (e:es)
         | idEq e' e = es
-        | otherwise = e:(removeEntity e' es)
+        | otherwise = e : removeEntity e' es
 
     removeEntityById :: Entity a => String -> [a] -> [a]
     removeEntityById _ [] = []
     removeEntityById id (e:es)
-        | id == (getId e) = es
-        | otherwise = e:(removeEntityById id es)
+        | id == getId e = es
+        | otherwise = e : removeEntityById id es
 
     exchangeEntity :: Entity a => a -> a -> [a] -> [a]
     exchangeEntity _ _ [] = []
     exchangeEntity oldEntity newEntity (e:es)
-        | idEq oldEntity e = newEntity:es
-        | otherwise = e:(exchangeEntity oldEntity newEntity es)
+        | idEq oldEntity e = newEntity : es
+        | otherwise = e : exchangeEntity oldEntity newEntity es
 
     showEntityById :: Entity a => Id -> [a] -> String
-    showEntityById id entities = case (findEntityById id entities) of
-        Nothing -> ""
-        Just e -> show e
+    showEntityById id entities = 
+        case findEntityById id entities of
+            Nothing -> ""
+            Just e -> show e

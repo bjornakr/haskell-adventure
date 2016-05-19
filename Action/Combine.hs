@@ -16,9 +16,9 @@ module Action.Combine where
                     . removeState  "Jaildoor" "Locked"
                     . destroyItem item1
             _ ->
-                case reversed of
-                    True -> ActionResult "You cannot combine those items."
-                    False -> combine' item2 item1 True
+                if reversed
+                    then ActionResult "You cannot combine those items."
+                    else combine' item2 item1 True
 
     combine :: Item -> Item -> GameState -> ActionResult
     combine i1 i2 = combine' i1 i2 False

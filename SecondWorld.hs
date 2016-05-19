@@ -179,10 +179,9 @@ gameLoop gamestate = do
     gameLoop gs
 
 main :: IO ()
-main = do
-    gameLoop (GameState {
-        player = samplePlayer,
-        world = sampleWorld,
-        stateMap = sampleStateMap,
-        conversationState = convState
-        })
+main = gameLoop GameState {
+            player = samplePlayer,
+            world = sampleWorld,
+            stateMap = sampleStateMap,
+            conversationState = convState
+        }

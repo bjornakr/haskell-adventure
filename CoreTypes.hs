@@ -50,9 +50,9 @@ module CoreTypes where
     instance Show Room where
         show (Room id0 exitIds items actors) = 
             "You are in " ++ id0 ++ ".\n\n" ++
-            "You see " ++ (show (map getId items)) ++ ".\n\n" ++
-            "There is someone here " ++ (show (map getId actors)) ++ ".\n\n" ++
-            "Exits to " ++ (show exitIds) ++ ".\n\n"
+            "You see " ++ show (map getId items) ++ ".\n\n" ++
+            "There is someone here " ++ show (map getId actors) ++ ".\n\n" ++
+            "Exits to " ++ show exitIds ++ ".\n\n"
 
 
     data Player = Player RoomId Inventory deriving (Show, Eq)
@@ -69,9 +69,8 @@ module CoreTypes where
     }
 
     instance Show GameState where
-        show (GameState { player = (Player roomId inventory), world = rooms, stateMap = stateMap }) =
-            case (findEntityById roomId rooms) of
+        show GameState { player = (Player roomId inventory), world = rooms, stateMap = stateMap } =
+            case findEntityById roomId rooms of
                 Nothing -> error $ "Missing room: " ++ roomId
-                (Just room) ->
-                    (show room) ++
-                    "You have " ++ (show (map getId inventory)) ++ "."
+                Just room ->
+                    show room ++ "You have " ++ show (map getId inventory) ++ "."
